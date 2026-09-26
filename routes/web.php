@@ -62,3 +62,4 @@ Route::middleware('auth')->group(function () {
         Route::post('notifications', [NotificationController::class, 'store'])->name('notifications.store');
     });
 });
+//roy
