@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'chatbot' => [
+        'provider' => env('CHATBOT_PROVIDER', 'none'), // none, openai, gemini
+        'openai_key' => env('OPENAI_API_KEY'),
+        'gemini_key' => env('GEMINI_API_KEY'),
+    ],
+
 ];
