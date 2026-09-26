@@ -1,17 +1,15 @@
-// app/Services/ChatbotService.php
 <?php
 
 namespace App\Services;
 
+use App\Models\ChatbotFaq;
 use Illuminate\Support\Facades\Http;
 
 class ChatbotService
 {
     public function ask(string $message): string
     {
-        $provider = config('services.chatbot.provider');
-
-        return match ($provider) {
+        return match (config('services.chatbot.provider')) {
             'gemini' => $this->askGemini($message),
             'openai' => $this->askOpenAI($message),
             default  => $this->fallbackFaq($message),
@@ -24,42 +22,38 @@ class ChatbotService
 
         $response = Http::post(
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={$key}",
-            [
-                'contents' => [[
-                    'parts' => [['text' => $this->buildPrompt($message)]],
-                ]],
-            ]
+            ['contents' => [['parts' => [['text' => $this->buildPrompt($message)]]]]]
         );
 
-        return $response->json('candidates.0.content.parts.0.text')
-            ?? 'Sorry, I could not process that right now.';
+        return $response->json('candidates.0.content.parts.0.text') ?? $this->fallbackFaq($message);
     }
 
     protected function askOpenAI(string $message): string
     {
         $key = config('services.chatbot.openai_key');
 
-        $response = Http::withToken($key)->post(
-            'https://api.openai.com/v1/chat/completions',
-            [
-                'model' => 'gpt-4o-mini',
-                'messages' => [
-                    ['role' => 'system', 'content' => $this->systemPrompt()],
-                    ['role' => 'user', 'content' => $message],
-                ],
-            ]
-        );
+        $response = Http::withToken($key)->post('https://api.openai.com/v1/chat/completions', [
+            'model' => 'gpt-4o-mini',
+            'messages' => [
+                ['role' => 'system', 'content' => $this->systemPrompt()],
+                ['role' => 'user', 'content' => $message],
+            ],
+        ]);
 
-        return $response->json('choices.0.message.content')
-            ?? 'Sorry, I could not process that right now.';
+        return $response->json('choices.0.message.content') ?? $this->fallbackFaq($message);
     }
 
     protected function fallbackFaq(string $message): string
     {
-        // keyword match against chatbot_faqs table, used if no API key is set
-        $faq = \App\Models\ChatbotFaq::where('is_active', true)
-            ->get()
-            ->first(fn ($f) => str_contains(strtolower($message), strtolower(explode(',', $f->keywords)[0] ?? '###')));
+        $faq = ChatbotFaq::where('is_active', true)->get()
+            ->first(function ($f) use ($message) {
+                foreach (explode(',', $f->keywords ?? '') as $kw) {
+                    if ($kw !== '' && str_contains(strtolower($message), strtolower(trim($kw)))) {
+                        return true;
+                    }
+                }
+                return false;
+            });
 
         return $faq->answer ?? "I'm not sure about that — please contact our staff directly.";
     }
