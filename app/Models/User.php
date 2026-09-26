@@ -21,6 +21,9 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'role',
+        'contact_number',
+        'is_active',
     ];
 
     /**
@@ -43,6 +46,27 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
         ];
+    }
+
+    public function isStaff(): bool
+    {
+        return $this->role === 'staff';
+    }
+
+    public function patientsRegistered()
+    {
+        return $this->hasMany(Patient::class, 'registered_by');
+    }
+
+    public function appointmentsCreated()
+    {
+        return $this->hasMany(Appointment::class, 'created_by');
+    }
+
+    public function appointmentsAssigned()
+    {
+        return $this->hasMany(Appointment::class, 'staff_id');
     }
 }
