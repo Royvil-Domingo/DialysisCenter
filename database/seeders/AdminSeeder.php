@@ -16,7 +16,7 @@ class AdminSeeder extends Seeder
         User::firstOrCreate(
             ['email' => 'admin@dialysiscenter.test'],
             [
-                'name' => 'System Administrator',
+                'name' => 'System bomboclat',
                 'password' => Hash::make('Admin@12345'),
                 'role' => 'admin',
                 'is_active' => true,

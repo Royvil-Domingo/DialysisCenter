@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Database\Eloquent\Model;
 
 class ActivityLog extends Model
@@ -16,7 +17,7 @@ class ActivityLog extends Model
     public static function record(string $action, string $module, string $description): void
     {
         static::create([
-            'user_id' => auth()->id(),
+            'user_id' => Auth::id(),
             'action' => $action,
             'module' => $module,
             'description' => $description,
