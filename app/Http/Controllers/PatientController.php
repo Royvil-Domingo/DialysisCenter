@@ -32,7 +32,7 @@ class PatientController extends Controller
      */
     public function create()
     {
-        return view('patients.index');
+        return view('patients.create');
     }
 
     /**

@@ -1,26 +1,24 @@
-{{-- resources/views/layouts/app.blade.php --}}
+{{-- Owner: Royvil — authenticated layout (sidebar + topbar) --}}
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>@yield('title', 'Dialysis Center')</title>
+    @include('partials.head')
+    <title>@yield('title', 'Dashboard') · {{ \App\Models\Setting::get('clinic_name', 'Dialysis Center') }}</title>
 </head>
 <body>
-    <nav style="padding:1rem;border-bottom:1px solid #ccc;">
-        <strong>Dialysis Center</strong> —
-        {{ auth()->user()->name ?? '' }} ({{ auth()->user()->role ?? '' }})
-        <form method="POST" action="{{ route('logout') }}" style="display:inline;">
-            @csrf
-            <button type="submit">Logout</button>
-        </form>
-    </nav>
-
-    <main style="padding:1rem;">
-        @if (session('success'))
-            <p style="color:green;">{{ session('success') }}</p>
-        @endif
-
-        @yield('content')
-    </main>
+<div class="d-lg-flex">
+    @include('partials.sidebar')
+    <div class="flex-grow-1 min-w-0">
+        @include('partials.topbar')
+        <main class="p-3 p-md-4">
+            @include('partials.flash')
+            @yield('content')
+        </main>
+    </div>
+</div>
+@include('partials.logout-modal')
+@include('partials.chatbot-widget')
+@include('partials.scripts')
+@stack('scripts')
 </body>
 </html>

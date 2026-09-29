@@ -1,16 +1,17 @@
+{{-- Owner: Royvil — public layout (welcome, lookup, login, errors) --}}
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>@yield('title', 'Dialysis Center')</title>
+    @include('partials.head')
+    <title>@yield('title', 'Welcome') · {{ \App\Models\Setting::get('clinic_name', 'Dialysis Center') }}</title>
 </head>
 <body>
-    <main style="max-width:400px;margin:4rem auto;padding:1rem;">
-        @if (session('status'))
-            <p style="color:green;">{{ session('status') }}</p>
-        @endif
-
-        @yield('content')
-    </main>
+@if (session('status'))
+    <div class="alert alert-success m-3">{{ session('status') }}</div>
+@endif
+@yield('content')
+@include('partials.chatbot-widget')
+@include('partials.scripts')
+@stack('scripts')
 </body>
 </html>

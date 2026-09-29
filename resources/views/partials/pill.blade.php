@@ -1,0 +1,1 @@
+<span class="pill pill-{{ $status }}">{{ str_replace('_', ' ', $status) }}</span>

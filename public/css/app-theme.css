@@ -1,0 +1,71 @@
+:root{--navy:#031a42;--navy2:#0a2a6b;--ink:#0b1f4d;--bg:#eaf0fa;--muted:#6b7a99}
+body{font-family:'Poppins',system-ui,sans-serif;background:var(--bg);color:#1c2b4a}
+h1,h2,h3,h4,h5,h6{color:var(--ink);font-weight:700}
+.min-w-0{min-width:0}
+
+/* sidebar */
+.app-sidebar{--bs-offcanvas-width:260px;--bs-offcanvas-bg:var(--navy);--bs-offcanvas-color:#fff;background-color:var(--navy)!important;color:#fff}
+@media(min-width:992px){.app-sidebar{flex:0 0 260px;width:260px!important;height:100vh!important;position:sticky;top:0;overflow-y:auto}}
+.logo-circle{width:76px;height:76px;border-radius:50%;background:#8fa4c4;color:var(--navy);display:flex;align-items:center;justify-content:center;font-size:2rem;margin:0 auto}
+.app-sidebar .nav-link{color:#dbe5f7;border-radius:12px;padding:.65rem .9rem;display:flex;gap:.7rem;align-items:center;font-weight:500}
+.app-sidebar .nav-link:hover{background:rgba(255,255,255,.08);color:#fff}
+.app-sidebar .nav-link.active{background:#22407a;color:#fff}
+.nav-label{font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:#7f95bd;margin:1rem .9rem .3rem}
+.btn-logout{background:#22407a;color:#fff;border-radius:12px;padding:.6rem;border:0}
+.btn-logout:hover{background:#2b4d94;color:#fff}
+
+/* top bar / page */
+.topbar{display:flex;align-items:center;gap:.75rem;padding:1rem 1.5rem 0}
+.avatar{width:38px;height:38px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;flex-shrink:0}
+.page-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:1rem;margin-bottom:1.25rem}
+.page-head h1{font-size:1.75rem;margin:0}
+.page-head p{margin:0;color:var(--muted)}
+
+/* cards, buttons */
+.card-soft{background:#fff;border:0;border-radius:20px;box-shadow:0 6px 20px rgba(11,31,77,.08)}
+.stat-icon{width:52px;height:52px;border-radius:14px;background:var(--navy2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.5rem;flex-shrink:0}
+.stat-value{font-size:1.7rem;font-weight:700;color:var(--ink);line-height:1.1}
+.btn-navy{background:var(--navy2);color:#fff;border-radius:12px;padding:.5rem 1.1rem;border:0}
+.btn-navy:hover,.btn-navy:focus{background:var(--navy);color:#fff}
+.btn-soft{background:#dfe6f3;color:var(--ink);border-radius:12px;border:0;padding:.5rem 1.1rem}
+.btn-soft:hover{background:#cfd9ee;color:var(--ink)}
+.icon-btn{border:0;background:none;color:var(--ink);font-size:1.05rem;padding:.2rem .35rem}
+.icon-btn.danger{color:#c62828}
+.form-control,.form-select{border-radius:12px;background-color:#f3f6fc;border-color:#d6dfef}
+.list-row{display:flex;align-items:center;gap:.75rem;padding:.7rem;border-radius:14px;text-decoration:none;color:inherit}
+.list-row:hover{background:#f1f5fc;color:inherit}
+
+/* tables + status pills */
+.table-soft thead th{color:var(--ink);font-weight:600;font-size:.85rem;border-bottom:2px solid #e3eaf6;white-space:nowrap}
+.table-soft td{font-size:.9rem;vertical-align:middle}
+.pill{display:inline-block;padding:.15rem .7rem;border-radius:999px;font-size:.75rem;font-weight:600;text-transform:capitalize;white-space:nowrap}
+.pill-scheduled,.pill-in_progress{background:#d6e8ff;color:#0a4a9a}
+.pill-completed,.pill-active,.pill-paid{background:#d9f5e0;color:#0d6b2b}
+.pill-cancelled,.pill-no_show,.pill-inactive{background:#fde0e0;color:#a11212}
+.pill-unpaid{background:#fff3c4;color:#8a6100}
+.pill-waived{background:#e6e0f5;color:#4b2d9c}
+
+/* auth (login) */
+.auth-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1rem;background:#fff}
+.auth-card{display:flex;width:min(920px,100%);background:#f7f7f8;border-radius:28px;box-shadow:0 12px 40px rgba(11,31,77,.25);padding:2rem;gap:2rem}
+.auth-art{flex:0 0 42%;border-radius:22px;background:linear-gradient(160deg,#0a4a9a,#00c2ff);color:#fff;padding:1.5rem;flex-direction:column;justify-content:flex-end;min-height:380px}
+.auth-art h3{color:#fff}
+.auth-form{flex:1;min-width:0}
+.auth-title{display:inline-block;background:#dcdcdc;color:#0a2a8a;font-weight:700;font-size:1.4rem;padding:.3rem 1.5rem;border-radius:999px;margin:1rem 0 1.5rem}
+.btn-login{background:#0f4c81;color:#fff;border-radius:10px;padding:.6rem;width:100%;border:0}
+.btn-login:hover{background:#0b3a63;color:#fff}
+
+/* landing */
+.hero-icon{font-size:12rem;color:var(--navy2);opacity:.85}
+.site-foot{background:#dfe6ec;color:#445}
+
+/* Diabot */
+.chat-launcher{position:fixed;right:20px;bottom:20px;width:56px;height:56px;border-radius:50%;border:0;background:var(--navy2);color:#fff;font-size:1.5rem;box-shadow:0 6px 18px rgba(0,0,0,.25);z-index:1050}
+.chat-card{position:fixed;right:20px;bottom:88px;width:340px;max-width:calc(100vw - 40px);background:#dfe9fb;border:3px solid var(--navy);border-radius:22px;padding:1rem;z-index:1050}
+.chat-log{max-height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:.4rem}
+.msg{padding:.45rem .75rem;border-radius:14px;font-size:.85rem;max-width:85%;white-space:pre-wrap}
+.msg-me{align-self:flex-end;background:var(--navy2);color:#fff}
+.msg-bot{align-self:flex-start;background:#fff}
+.chip{border:0;background:#fff;color:var(--navy2);border-radius:999px;font-size:.75rem;padding:.25rem .7rem;text-decoration:underline}
+
+@media print{.app-sidebar,.topbar,.no-print,.chat-launcher,.chat-card{display:none!important}body{background:#fff}.card-soft{box-shadow:none}}

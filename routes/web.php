@@ -19,8 +19,9 @@ use Illuminate\Support\Facades\Route;
 Route::view('/', 'welcome')->name('welcome');
 Route::get('/lookup', [PatientLookupController::class, 'index'])->name('lookup');
 Route::post('/lookup/search', [PatientLookupController::class, 'search'])->name('lookup.search');
-Route::post('/chatbot/message', [ChatbotController::class, 'respond'])->name('chatbot.message');
-
+Route::post('/chatbot/message', [ChatbotController::class, 'respond'])
+    ->middleware('throttle:20,1')
+    ->name('chatbot.message');
 // register disabled — staff/admin accounts are created by an admin only, never self-signup
 Auth::routes(['register' => false]);
 

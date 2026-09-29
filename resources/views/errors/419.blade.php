@@ -1,0 +1,1 @@
+@extends('errors.base', ['code' => 419, 'heading' => 'Session expired', 'message' => 'Your page expired. Please go back, refresh, and try again.'])

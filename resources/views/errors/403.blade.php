@@ -1,0 +1,1 @@
+@extends('errors.base', ['code' => 403, 'heading' => 'Access denied', 'message' => $exception->getMessage() ?: 'You do not have permission to open this page.'])

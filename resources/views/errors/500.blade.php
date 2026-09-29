@@ -1,0 +1,1 @@
+@extends('errors.base', ['code' => 500, 'heading' => 'Something went wrong', 'message' => 'We hit a problem on our side. Please try again in a moment.'])

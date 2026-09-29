@@ -17,7 +17,7 @@ class RoleMiddleware
     {
         if (!$request->user()|| !in_array($request->user()->role,$roles))
         {
-            abort(403,'You do not have permission to acces this page. putanginamo');
+            abort(403,'You do not have permission to acces this page.');
         }
 
         return $next($request);
