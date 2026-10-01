@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
-use app\Models\Patient;
+use App\Models\Patient;
 use Illuminate\Http\Request;
 
 class PatientController extends Controller
@@ -15,10 +15,12 @@ class PatientController extends Controller
     {
         $patients = Patient::query()
         ->when($request->search, function ($q, $search) {
-            $q->where('first_name', 'like', "%{$search}%")
-              ->orWhere('last_name', 'like', "%{$search}%")
-              ->orWhere('patient_code', 'like', "%{$search}%");
-        })
+        $q->where(function ($q) use ($search) {
+        $q->where('first_name', 'like', "%{$search}%")
+          ->orWhere('last_name', 'like', "%{$search}%")
+          ->orWhere('patient_code', 'like', "%{$search}%");
+    });
+})
         ->when($request->status, fn ($q, $status) => $q->where('status', $status))
         ->latest()
         ->paginate(15)
