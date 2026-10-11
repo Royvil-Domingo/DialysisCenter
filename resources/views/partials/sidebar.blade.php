@@ -25,7 +25,7 @@
         <div class="logo-circle"><i class="bi bi-activity"></i></div>
         <div class="small mt-2 fw-semibold">{{ \App\Models\Setting::get('clinic_name', 'Dialysis Center') }}</div>
     </div>
-    <nav class="nav flex-column gap-1 flex-grow-1">
+    <nav class="sidebar-nav nav flex-column gap-1">
         @foreach ($nav as [$route, $icon, $label, $pattern])
             <a class="nav-link {{ request()->routeIs($pattern) ? 'active' : '' }}" href="{{ route($route) }}">
                 <i class="bi {{ $icon }}"></i>{{ $label }}
