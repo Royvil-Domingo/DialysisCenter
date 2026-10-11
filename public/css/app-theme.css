@@ -7,7 +7,14 @@
   --muted: #6b7a99;
 }
 
+html, body {
+  min-height: 100%;
+}
+
 body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
   font-family: 'Poppins', system-ui, sans-serif;
   background: var(--bg);
   color: #1c2b4a;
@@ -116,8 +123,21 @@ h6 {
   color: #fff;
 }
 
+.logout-modal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.logout-modal:not(.show) {
+  display: none;
+}
+
 .logout-modal .modal-dialog {
   max-width: 420px;
+  width: min(100%, 420px);
+  margin: 0 auto;
 }
 
 .logout-modal .modal-content {
@@ -382,6 +402,7 @@ h6 {
 }
 
 .site-foot {
+  margin-top: auto;
   background: #dfe6ec;
   color: #445;
 }
@@ -391,6 +412,7 @@ h6 {
   position: fixed;
   right: 20px;
   bottom: 20px;
+  left: auto;
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -406,6 +428,7 @@ h6 {
   position: fixed;
   right: 20px;
   bottom: 88px;
+  left: auto;
   width: 340px;
   max-width: calc(100vw - 40px);
   background: #dfe9fb;
