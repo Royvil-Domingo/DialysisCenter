@@ -8,41 +8,112 @@ use Throwable;
 
 class ChatbotService
 {
-    public function ask(string $message): string
-    {
-        $provider = strtolower((string) config('services.chatbot.provider'));
+    
+public function ask(string $message): string
+{
+    // STEP 1: Always check preset answers first.
+    $presetAnswer = $this->findPresetAnswer($message);
 
-        if ($provider === 'gemini' && filled(config('services.chatbot.gemini_key'))) {
-            return $this->askGemini($message);
-        }
-
-        if ($provider === 'openai' && filled(config('services.chatbot.openai_key'))) {
-            return $this->askOpenAI($message);
-        }
-
-        return $this->fallbackFaq($message);
+    if ($presetAnswer !== null) {
+        return $presetAnswer;
     }
 
-    protected function askGemini(string $message): string
-    {
-        $key = config('services.chatbot.gemini_key');
+    // STEP 2: No preset matched, so use the configured AI.
+    $provider = strtolower(
+        (string) config('services.chatbot.provider')
+    );
 
-        try {
-            $response = Http::timeout(15)->post(
-                "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={$key}",
-                ['contents' => [['parts' => [['text' => $this->buildPrompt($message)]]]]]
+    if (
+        $provider === 'gemini'
+        && filled(config('services.chatbot.gemini_key'))
+    ) {
+        return $this->askGemini($message);
+    }
+
+    if (
+        $provider === 'openai'
+        && filled(config('services.chatbot.openai_key'))
+    ) {
+        return $this->askOpenAI($message);
+    }
+
+    // STEP 3: No AI configured.
+    return "I couldn't find a preset answer. Please contact our staff for assistance.";
+}
+
+    
+protected function askGemini(string $message): string
+{
+    $key = config('services.chatbot.gemini_key');
+
+    try {
+        $response = Http::acceptJson()
+            ->timeout(30)
+            ->post(
+                'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key='
+                    . urlencode($key),
+                [
+                    'systemInstruction' => [
+                        'parts' => [
+                            ['text' => $this->systemPrompt()],
+                        ],
+                    ],
+                    'contents' => [
+                        [
+                            'role' => 'user',
+                            'parts' => [
+                                ['text' => $message],
+                            ],
+                        ],
+                    ],
+                    'generationConfig' => [
+                        'temperature' => 0.5,
+                        'maxOutputTokens' => 400,
+                    ],
+                ]
             );
 
-            if (!$response->successful()) {
-                return $this->fallbackFaq($message);
-            }
+        if (! $response->successful()) {
+            \Illuminate\Support\Facades\Log::error(
+                'Gemini chatbot API request failed.',
+                [
+                    'status' => $response->status(),
+                    'error' => $response->json('error.message')
+                        ?? 'No error message returned',
+                ]
+            );
 
-            $reply = $response->json('candidates.0.content.parts.0.text');
-            return is_string($reply) && trim($reply) !== '' ? $reply : $this->fallbackFaq($message);
-        } catch (Throwable) {
-            return $this->fallbackFaq($message);
+            return 'The AI assistant is temporarily unavailable. Please contact our staff.';
         }
+
+        $reply = $response->json('candidates.0.content.parts.0.text');
+
+        if (! is_string($reply) || trim($reply) === '') {
+            \Illuminate\Support\Facades\Log::warning(
+                'Gemini returned no chatbot response.'
+            );
+
+            return 'I could not generate a reply. Please try again.';
+        }
+
+        return trim($reply);
+    } catch (\Illuminate\Http\Client\ConnectionException $e) {
+        \Illuminate\Support\Facades\Log::error(
+            'Gemini chatbot connection failed.',
+            ['message' => $e->getMessage()]
+        );
+
+        return 'Unable to connect to the AI service. Please try again later.';
+    } catch (\Throwable $e) {
+        \Illuminate\Support\Facades\Log::error(
+            'Unexpected chatbot API error.',
+            ['message' => $e->getMessage()]
+        );
+
+        return 'The AI assistant encountered an error. Please try again later.';
     }
+}
+
 
     protected function askOpenAI(string $message): string
     {
@@ -67,6 +138,60 @@ class ChatbotService
             return $this->fallbackFaq($message);
         }
     }
+
+
+
+    
+protected function findPresetAnswer(string $message): ?string
+{
+    $faqs = ChatbotFaq::where('is_active', true)->get();
+
+    $normalizedMessage = $this->normalizeText($message);
+
+    // Check database FAQs first.
+    foreach ($faqs as $faq) {
+        $question = $this->normalizeText(
+            (string) ($faq->question ?? '')
+        );
+
+        if (
+            $question !== ''
+            && $normalizedMessage === $question
+        ) {
+            return $faq->answer;
+        }
+
+        foreach ($this->extractKeywords($faq) as $keyword) {
+            if (
+                $keyword !== ''
+                && str_contains($normalizedMessage, $keyword)
+            ) {
+                return $faq->answer;
+            }
+        }
+    }
+
+    // Check built-in preset FAQs next.
+    foreach ($this->defaultFaqs() as $faq) {
+        $question = $this->normalizeText($faq['question']);
+
+        if ($normalizedMessage === $question) {
+            return $faq['answer'];
+        }
+
+        if (
+            $this->matchesDefaultFaq(
+                $normalizedMessage,
+                $faq['keywords']
+            )
+        ) {
+            return $faq['answer'];
+        }
+    }
+
+    // No preset answer found. Allow the AI to answer.
+    return null;
+}
 
     protected function fallbackFaq(string $message): string
     {
@@ -135,7 +260,7 @@ class ChatbotService
             [
                 'question' => 'What should I bring to my appointment?',
                 'answer' => 'Please bring a valid ID, your patient reference code, and any current medications or prescriptions. Arrive at least 15 minutes early.',
-                'keywords' => ['bring', 'prepare', 'appointment requirements', 'what to bring', 'documents', 'id', 'medications'],
+                'keywords' => ['bring', 'prepare', 'appointment requirements', 'what to bring', 'documents', 'medications', 'items to bring'],
             ],
             [
                 'question' => 'How do I reschedule or cancel my appointment?',
@@ -145,7 +270,7 @@ class ChatbotService
             [
                 'question' => 'What is hemodialysis?',
                 'answer' => 'Hemodialysis is a treatment that filters waste, extra fluid, and salt from your blood when your kidneys can no longer do this well enough on their own.',
-                'keywords' => ['hemodialysis', 'dialysis', 'kidney treatment', 'what is dialysis', 'what happens in dialysis'],
+                'keywords' => ['hemodialysis', 'what is hemodialysis', 'what happens in hemodialysis', 'kidney treatment filter blood'],
             ],
         ];
     }

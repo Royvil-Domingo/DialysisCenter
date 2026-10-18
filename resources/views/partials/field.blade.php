@@ -15,16 +15,11 @@
     @elseif ($type === 'textarea')
         <textarea id="f_{{ $name }}" name="{{ $name }}" rows="3" class="form-control @error($name) is-invalid @enderror">{{ $val }}</textarea>
     @elseif ($type === 'password')
-        <div class="position-relative">
+        <div class="password-field position-relative">
             <input id="f_{{ $name }}" type="password" name="{{ $name }}" value="{{ $val }}"
                    class="form-control pe-5 @error($name) is-invalid @enderror"
                    @if(isset($step)) step="{{ $step }}" @endif {{ ($required ?? false) ? 'required' : '' }}>
-            <button type="button"
-                    class="btn btn-link position-absolute end-0 top-50 translate-middle-y me-2 p-0 text-muted password-toggle"
-                    data-target="f_{{ $name }}"
-                    aria-label="Show password">
-                <i class="bi bi-eye-slash password-eye-icon"></i>
-            </button>
+            @include('partials.password-toggle-button', ['target' => 'f_' . $name])
         </div>
     @else
         <input id="f_{{ $name }}" type="{{ $type }}" name="{{ $name }}" value="{{ $val }}"
@@ -33,48 +28,3 @@
     @endif
     @error($name)<div class="invalid-feedback">{{ $message }}</div>@enderror
 </div>
-
-<style>
-    .password-toggle {
-        transition: transform 0.18s ease, opacity 0.18s ease;
-        opacity: 0.8;
-    }
-
-    .password-toggle:hover {
-        opacity: 1;
-        transform: translateY(-50%) scale(1.08);
-    }
-
-    .password-eye-icon {
-        transition: transform 0.2s ease, opacity 0.2s ease, filter 0.2s ease;
-        display: inline-block;
-    }
-
-    .password-toggle.is-visible .password-eye-icon {
-        transform: rotate(-12deg) scale(1.12);
-        filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.18));
-    }
-</style>
-
-<script>
-    document.addEventListener('DOMContentLoaded', function () {
-        document.querySelectorAll('.password-toggle').forEach(function (button) {
-            button.addEventListener('click', function () {
-                const input = document.getElementById(button.dataset.target);
-                if (!input) return;
-
-                const isPassword = input.type === 'password';
-                input.type = isPassword ? 'text' : 'password';
-
-                const icon = button.querySelector('.password-eye-icon');
-                if (icon) {
-                    icon.classList.toggle('bi-eye', isPassword);
-                    icon.classList.toggle('bi-eye-slash', !isPassword);
-                }
-
-                button.classList.toggle('is-visible', isPassword);
-                button.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
-            });
-        });
-    });
-</script>
