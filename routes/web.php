@@ -64,3 +64,5 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::post('/notifications', [NotificationController::class, 'store'])->name('notifications.store');
     });
 });
+
+require __DIR__.'/demo.php';
