@@ -7,6 +7,7 @@ use App\Models\Charge;
 use App\Models\Patient;
 use App\Models\TreatmentRecord;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class ChargeController extends Controller
 {
@@ -69,6 +70,11 @@ class ChargeController extends Controller
      */
     public function edit(Charge $charge)
     {
+        if ($charge->status !== 'unpaid') {
+            return redirect()->route('charges.index')
+                ->withErrors(['charge' => 'Settled charges cannot be edited. Create a correction charge instead.']);
+        }
+
         $patients = Patient::where('status', 'active')->orderBy('first_name')->get();
 
         return view('charges.edit', compact('charge', 'patients'));
@@ -79,7 +85,12 @@ class ChargeController extends Controller
      */
     public function update(Request $request, Charge $charge)
     {
-        $charge->update($this->validated($request));
+        if ($charge->status !== 'unpaid') {
+            return redirect()->route('charges.index')
+                ->withErrors(['charge' => 'This charge has already been settled. Create a correction charge instead of editing a paid or waived record.']);
+        }
+
+        $charge->update($this->validated($request, $charge));
 
         ActivityLog::record('update', 'charges', "Updated charge #{$charge->id}");
 
@@ -88,6 +99,10 @@ class ChargeController extends Controller
 
     public function markPaid(Charge $charge)
     {
+        if ($charge->status !== 'unpaid') {
+            return back()->withErrors(['charge' => 'Only unpaid charges can be marked as paid.']);
+        }
+
         $charge->update(['status' => 'paid']);
 
         ActivityLog::record('mark-paid', 'charges', "Marked charge #{$charge->id} as paid");
@@ -97,6 +112,10 @@ class ChargeController extends Controller
 
     public function waive(Charge $charge)
     {
+        if ($charge->status !== 'unpaid') {
+            return back()->withErrors(['charge' => 'Only unpaid charges can be waived.']);
+        }
+
         $charge->update(['status' => 'waived']);
 
         ActivityLog::record('waive', 'charges', "Waived charge #{$charge->id}");
@@ -104,15 +123,46 @@ class ChargeController extends Controller
         return back()->with('success', 'Charge waived.');
     }
 
-    protected function validated(Request $request): array
+    protected function validated(Request $request, ?Charge $charge = null): array
     {
-        return $request->validate([
-            'patient_id' => 'required|exists:patients,id',
-            'treatment_record_id' => 'nullable|exists:treatment_records,id',
+        $validator = Validator::make($request->all(), [
+            'patient_id' => [
+                'required',
+                'exists:patients,id',
+                function (string $attribute, mixed $value, \Closure $fail) {
+                    $patient = Patient::find($value);
+
+                    if ($patient && $patient->status !== 'active') {
+                        $fail('Only active patients can have charges recorded.');
+                    }
+                },
+            ],
+            'treatment_record_id' => ['nullable', 'exists:treatment_records,id'],
             'description' => 'required|string|max:255',
             'amount' => 'required|numeric|min:0',
             'charge_date' => 'required|date',
         ]);
+
+        $validator->after(function ($validator) use ($request, $charge) {
+            $patientId = $request->input('patient_id');
+            $treatmentRecordId = $request->input('treatment_record_id');
+
+            if ($treatmentRecordId) {
+                $treatmentRecord = TreatmentRecord::find($treatmentRecordId);
+
+                if ($treatmentRecord && (int) $treatmentRecord->patient_id !== (int) $patientId) {
+                    $validator->errors()->add('patient_id', 'The selected treatment record belongs to a different patient.');
+                }
+            }
+
+            if ($charge && $charge->status !== 'unpaid') {
+                $validator->errors()->add('charge', 'This charge has already been settled. Use a correction workflow instead of editing it.');
+            }
+        });
+
+        $validator->validate();
+
+        return $validator->validated();
     }
 
 

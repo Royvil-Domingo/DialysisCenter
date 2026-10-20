@@ -13,11 +13,18 @@ class AdminSeeder extends Seeder
      */
     public function run(): void
     {
+        $email = env('ADMIN_EMAIL');
+        $password = env('ADMIN_PASSWORD');
+
+        if (! $email || ! $password) {
+            return;
+        }
+
         User::updateOrCreate(
-            ['email' => 'admin@dialysiscenter.test'],
+            ['email' => strtolower($email)],
             [
                 'name' => 'System Administrator',
-                'password' => Hash::make('Admin@12345'),
+                'password' => Hash::make($password),
                 'role' => 'admin',
                 'is_active' => true,
             ]

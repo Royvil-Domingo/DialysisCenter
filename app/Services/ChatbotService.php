@@ -3,245 +3,426 @@
 namespace App\Services;
 
 use App\Models\ChatbotFaq;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class ChatbotService
 {
-    
-public function ask(string $message): string
-{
-    // STEP 1: Always check preset answers first.
-    $presetAnswer = $this->findPresetAnswer($message);
+    protected int $maxHistoryTurns = 4;
 
-    if ($presetAnswer !== null) {
-        return $presetAnswer;
+    public function ask(string $message): string
+    {
+        $message = trim((string) $message);
+
+        if ($message === '') {
+            return 'Please enter a question so I can help you.';
+        }
+
+        $matchedFaq = $this->findBestFaqMatch($message);
+
+        if ($matchedFaq !== null) {
+            return $matchedFaq['answer'];
+        }
+
+        $provider = $this->configuredProvider();
+
+        if ($provider === 'none') {
+            return 'The AI assistant is not configured for this clinic. Please contact our staff directly for help.';
+        }
+
+        $this->storeUserHistory($message);
+
+        if ($provider === 'gemini') {
+            if (filled(config('services.chatbot.gemini_key'))) {
+                return $this->askGemini($message);
+            }
+
+            return 'The AI assistant is not configured for this clinic. Please contact our staff directly for help.';
+        }
+
+        if ($provider === 'openai') {
+            if (filled(config('services.chatbot.openai_key'))) {
+                return $this->askOpenAI($message);
+            }
+
+            return 'The AI assistant is not configured for this clinic. Please contact our staff directly for help.';
+        }
+
+        return 'The AI assistant is not configured for this clinic. Please contact our staff directly for help.';
     }
 
-    // STEP 2: No preset matched, so use the configured AI.
-    $provider = strtolower(
-        (string) config('services.chatbot.provider')
-    );
+    protected function askGemini(string $message): string
+    {
+        $key = (string) config('services.chatbot.gemini_key');
+        $payload = [
+            'system_instruction' => [
+                'parts' => [
+                    ['text' => $this->systemPrompt()],
+                ],
+            ],
+            'contents' => $this->buildGeminiContents($message),
+            'generationConfig' => [
+                'maxOutputTokens' => 400,
+            ],
+        ];
 
-    if (
-        $provider === 'gemini'
-        && filled(config('services.chatbot.gemini_key'))
-    ) {
-        return $this->askGemini($message);
-    }
+        try {
+            $response = Http::acceptJson()
+                ->timeout(20)
+                ->connectTimeout(10)
+                ->post(
+                    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=' . urlencode($key),
+                    $payload
+                );
 
-    if (
-        $provider === 'openai'
-        && filled(config('services.chatbot.openai_key'))
-    ) {
-        return $this->askOpenAI($message);
-    }
-
-    // STEP 3: No AI configured.
-    return "I couldn't find a preset answer. Please contact our staff for assistance.";
-}
-
-    
-protected function askGemini(string $message): string
-{
-    $key = config('services.chatbot.gemini_key');
-
-    try {
-        $response = Http::acceptJson()
-            ->timeout(30)
-            ->post(
-                'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key='
-                    . urlencode($key),
-                [
-                    'systemInstruction' => [
-                        'parts' => [
-                            ['text' => $this->systemPrompt()],
-                        ],
-                    ],
-                    'contents' => [
-                        [
-                            'role' => 'user',
-                            'parts' => [
-                                ['text' => $message],
-                            ],
-                        ],
-                    ],
-                    'generationConfig' => [
-                        'temperature' => 0.5,
-                        'maxOutputTokens' => 400,
-                    ],
-                ]
-            );
-
-        if (! $response->successful()) {
-            \Illuminate\Support\Facades\Log::error(
-                'Gemini chatbot API request failed.',
-                [
+            if (! $response->successful()) {
+                Log::error('Gemini chatbot API request failed.', [
                     'status' => $response->status(),
-                    'error' => $response->json('error.message')
-                        ?? 'No error message returned',
-                ]
-            );
+                    'provider' => 'gemini',
+                    'error' => is_string($response->json('error.message')) ? $response->json('error.message') : 'No error message returned',
+                ]);
 
-            return 'The AI assistant is temporarily unavailable. Please contact our staff.';
+                return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
+            }
+
+            $reply = $response->json('candidates.0.content.parts.0.text');
+
+            if (! is_string($reply) || trim($reply) === '') {
+                Log::warning('Gemini chatbot returned an empty response.', ['provider' => 'gemini']);
+
+                return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
+            }
+
+            $this->storeAiHistory('assistant', trim($reply));
+
+            return trim($reply);
+        } catch (ConnectionException $exception) {
+            Log::error('Gemini chatbot connection failed.', [
+                'provider' => 'gemini',
+                'exception' => class_basename($exception),
+            ]);
+
+            return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
+        } catch (Throwable $exception) {
+            Log::error('Unexpected Gemini chatbot error.', [
+                'provider' => 'gemini',
+                'exception' => class_basename($exception),
+            ]);
+
+            return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
         }
-
-        $reply = $response->json('candidates.0.content.parts.0.text');
-
-        if (! is_string($reply) || trim($reply) === '') {
-            \Illuminate\Support\Facades\Log::warning(
-                'Gemini returned no chatbot response.'
-            );
-
-            return 'I could not generate a reply. Please try again.';
-        }
-
-        return trim($reply);
-    } catch (\Illuminate\Http\Client\ConnectionException $e) {
-        \Illuminate\Support\Facades\Log::error(
-            'Gemini chatbot connection failed.',
-            ['message' => $e->getMessage()]
-        );
-
-        return 'Unable to connect to the AI service. Please try again later.';
-    } catch (\Throwable $e) {
-        \Illuminate\Support\Facades\Log::error(
-            'Unexpected chatbot API error.',
-            ['message' => $e->getMessage()]
-        );
-
-        return 'The AI assistant encountered an error. Please try again later.';
     }
-}
-
 
     protected function askOpenAI(string $message): string
     {
-        $key = config('services.chatbot.openai_key');
+        $key = (string) config('services.chatbot.openai_key');
+        $messages = $this->buildOpenAiMessages($message);
 
         try {
-            $response = Http::withToken($key)->timeout(15)->post('https://api.openai.com/v1/chat/completions', [
-                'model' => 'gpt-4o-mini',
-                'messages' => [
-                    ['role' => 'system', 'content' => $this->systemPrompt()],
-                    ['role' => 'user', 'content' => $message],
-                ],
-            ]);
+            $response = Http::withToken($key)
+                ->acceptJson()
+                ->timeout(20)
+                ->connectTimeout(10)
+                ->post('https://api.openai.com/v1/chat/completions', [
+                    'model' => 'gpt-4o-mini',
+                    'messages' => $messages,
+                    'temperature' => 0.5,
+                ]);
 
-            if (!$response->successful()) {
-                return $this->fallbackFaq($message);
+            if (! $response->successful()) {
+                Log::error('OpenAI chatbot API request failed.', [
+                    'status' => $response->status(),
+                    'provider' => 'openai',
+                    'error' => is_string($response->json('error.message')) ? $response->json('error.message') : 'No error message returned',
+                ]);
+
+                return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
             }
 
             $reply = $response->json('choices.0.message.content');
-            return is_string($reply) && trim($reply) !== '' ? $reply : $this->fallbackFaq($message);
-        } catch (Throwable) {
-            return $this->fallbackFaq($message);
+
+            if (! is_string($reply) || trim($reply) === '') {
+                Log::warning('OpenAI chatbot returned an empty response.', ['provider' => 'openai']);
+
+                return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
+            }
+
+            $this->storeAiHistory('assistant', trim($reply));
+
+            return trim($reply);
+        } catch (ConnectionException $exception) {
+            Log::error('OpenAI chatbot connection failed.', [
+                'provider' => 'openai',
+                'exception' => class_basename($exception),
+            ]);
+
+            return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
+        } catch (Throwable $exception) {
+            Log::error('Unexpected OpenAI chatbot error.', [
+                'provider' => 'openai',
+                'exception' => class_basename($exception),
+            ]);
+
+            return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
         }
     }
 
+    protected function configuredProvider(): string
+    {
+        $provider = strtolower((string) config('services.chatbot.provider'));
 
-
-    
-protected function findPresetAnswer(string $message): ?string
-{
-    $faqs = ChatbotFaq::where('is_active', true)->get();
-
-    $normalizedMessage = $this->normalizeText($message);
-
-    // Check database FAQs first.
-    foreach ($faqs as $faq) {
-        $question = $this->normalizeText(
-            (string) ($faq->question ?? '')
-        );
-
-        if (
-            $question !== ''
-            && $normalizedMessage === $question
-        ) {
-            return $faq->answer;
+        if ($provider === '' || $provider === 'none' || $provider === 'null') {
+            return 'none';
         }
 
-        foreach ($this->extractKeywords($faq) as $keyword) {
-            if (
-                $keyword !== ''
-                && str_contains($normalizedMessage, $keyword)
-            ) {
-                return $faq->answer;
+        if (in_array($provider, ['gemini', 'openai'], true)) {
+            return $provider;
+        }
+
+        return 'none';
+    }
+
+    protected function findBestFaqMatch(string $message): ?array
+    {
+        $normalizedMessage = $this->normalizeText($message);
+
+        if ($normalizedMessage === '') {
+            return null;
+        }
+
+        $candidates = $this->collectFaqCandidates();
+        $bestMatch = null;
+
+        foreach ($candidates as $candidate) {
+            $score = $this->scoreFaqMatch($normalizedMessage, $candidate);
+
+            if ($score <= 0) {
+                continue;
+            }
+
+            if ($bestMatch === null || $score > $bestMatch['score']) {
+                $bestMatch = [
+                    'answer' => $candidate['answer'],
+                    'score' => $score,
+                ];
             }
         }
+
+        return $bestMatch !== null && $bestMatch['score'] >= 25 ? $bestMatch : null;
     }
 
-    // Check built-in preset FAQs next.
-    foreach ($this->defaultFaqs() as $faq) {
-        $question = $this->normalizeText($faq['question']);
+    protected function collectFaqCandidates(): array
+    {
+        $databaseFaqs = ChatbotFaq::where('is_active', true)
+            ->get()
+            ->map(function ($faq) {
+                return [
+                    'question' => (string) ($faq->question ?? ''),
+                    'answer' => (string) ($faq->answer ?? ''),
+                    'keywords' => (string) ($faq->keywords ?? ''),
+                ];
+            })
+            ->all();
 
-        if ($normalizedMessage === $question) {
-            return $faq['answer'];
-        }
-
-        if (
-            $this->matchesDefaultFaq(
-                $normalizedMessage,
-                $faq['keywords']
-            )
-        ) {
-            return $faq['answer'];
-        }
+        return [...$databaseFaqs, ...$this->defaultFaqs()];
     }
 
-    // No preset answer found. Allow the AI to answer.
-    return null;
-}
+    protected function scoreFaqMatch(string $normalizedMessage, array $faq): int
+    {
+        $question = $this->normalizeText((string) ($faq['question'] ?? ''));
+        $keywords = $this->extractKeywordsFromCsv((string) ($faq['keywords'] ?? ''));
+
+        if ($question !== '' && $normalizedMessage === $question) {
+            return 100;
+        }
+
+        $messageTokens = $this->tokenize($normalizedMessage);
+        $score = 0;
+
+        foreach ($keywords as $keyword) {
+            $normalizedKeyword = $this->normalizeText((string) $keyword);
+
+            if ($normalizedKeyword === '') {
+                continue;
+            }
+
+            if ($normalizedMessage === $normalizedKeyword) {
+                $score += $this->isWeakKeyword($normalizedKeyword) ? 18 : 80;
+                continue;
+            }
+
+            $keywordTokens = $this->tokenize($normalizedKeyword);
+
+            if ($keywordTokens === []) {
+                continue;
+            }
+
+            $strongOverlap = array_values(array_intersect($messageTokens, $keywordTokens));
+            $wholePhrase = $this->containsWholePhrase($normalizedMessage, $normalizedKeyword);
+
+            if ($wholePhrase && ! $this->isWeakKeyword($normalizedKeyword)) {
+                $score += 25;
+                continue;
+            }
+
+            if (count($strongOverlap) >= 2) {
+                $score += $this->isWeakKeyword($normalizedKeyword) ? 12 : 30;
+                continue;
+            }
+
+            if ($this->isWeakKeyword($normalizedKeyword)) {
+                $contextMatch = $this->hasWeakKeywordContext($messageTokens, $normalizedKeyword);
+
+                if ($contextMatch && $wholePhrase) {
+                    $score += 18;
+                }
+            }
+        }
+
+        if ($question !== '' && $this->sameIntent($normalizedMessage, $question)) {
+            $score += 20;
+        }
+
+        return $score;
+    }
+
+    protected function sameIntent(string $normalizedMessage, string $question): bool
+    {
+        $messageTokens = $this->tokenize($normalizedMessage);
+        $questionTokens = $this->tokenize($question);
+
+        if ($messageTokens === [] || $questionTokens === []) {
+            return false;
+        }
+
+        $overlap = array_intersect($messageTokens, $questionTokens);
+
+        return count($overlap) >= 2 || (count($overlap) >= 1 && count($questionTokens) <= 3);
+    }
+
+    protected function isWeakKeyword(string $keyword): bool
+    {
+        $keyword = trim($keyword);
+
+        if ($keyword === '') {
+            return true;
+        }
+
+        if (strlen($keyword) <= 3) {
+            return true;
+        }
+
+        return in_array($keyword, ['open', 'hours', 'schedule', 'time', 'when', 'bring', 'appointment'], true);
+    }
+
+    protected function hasWeakKeywordContext(array $messageTokens, string $keyword): bool
+    {
+        $contextWords = ['when', 'what', 'time', 'hours', 'open', 'schedule', 'appointment', 'bring'];
+
+        if ($keyword === '' || $messageTokens === []) {
+            return false;
+        }
+
+        $contextHits = array_intersect($messageTokens, $contextWords);
+
+        return count($contextHits) >= 2;
+    }
+
+    protected function buildGeminiContents(string $message): array
+    {
+        $contents = [];
+
+        foreach ($this->recentConversationHistory() as $turn) {
+            $role = ($turn['role'] ?? 'user') === 'assistant' ? 'model' : 'user';
+            $contents[] = [
+                'role' => $role,
+                'parts' => [['text' => (string) ($turn['content'] ?? '')]],
+            ];
+        }
+
+        $contents[] = [
+            'role' => 'user',
+            'parts' => [['text' => $message]],
+        ];
+
+        return $contents;
+    }
+
+    protected function buildOpenAiMessages(string $message): array
+    {
+        $messages = [[
+            'role' => 'system',
+            'content' => $this->systemPrompt(),
+        ]];
+
+        foreach ($this->recentConversationHistory() as $turn) {
+            $messages[] = [
+                'role' => $turn['role'] === 'assistant' ? 'assistant' : 'user',
+                'content' => (string) ($turn['content'] ?? ''),
+            ];
+        }
+
+        $messages[] = ['role' => 'user', 'content' => $message];
+
+        return $messages;
+    }
+
+    protected function recentConversationHistory(): array
+    {
+        $history = session('chatbot_history', []);
+
+        if (! is_array($history)) {
+            return [];
+        }
+
+        return array_slice($history, -($this->maxHistoryTurns * 2));
+    }
+
+    protected function storeAiHistory(string $role, string $content): void
+    {
+        $history = session('chatbot_history', []);
+
+        if (! is_array($history)) {
+            $history = [];
+        }
+
+        $history[] = ['role' => $role, 'content' => trim($content)];
+
+        if (count($history) > ($this->maxHistoryTurns * 2)) {
+            $history = array_slice($history, -($this->maxHistoryTurns * 2));
+        }
+
+        session(['chatbot_history' => $history]);
+    }
+
+    protected function storeUserHistory(string $message): void
+    {
+        $history = session('chatbot_history', []);
+
+        if (! is_array($history)) {
+            $history = [];
+        }
+
+        $history[] = ['role' => 'user', 'content' => trim($message)];
+
+        if (count($history) > ($this->maxHistoryTurns * 2)) {
+            $history = array_slice($history, -($this->maxHistoryTurns * 2));
+        }
+
+        session(['chatbot_history' => $history]);
+    }
 
     protected function fallbackFaq(string $message): string
     {
-        $faqs = ChatbotFaq::where('is_active', true)->get();
+        $matchedFaq = $this->findBestFaqMatch($message);
 
-        if ($faqs->isEmpty()) {
-            $faqs = collect($this->defaultFaqs());
+        if ($matchedFaq !== null) {
+            return $matchedFaq['answer'];
         }
 
-        $normalizedMessage = $this->normalizeText($message);
-
-        $faq = $faqs->first(function ($f) use ($normalizedMessage) {
-            $candidateTexts = collect([
-                $f->question ?? '',
-                $f->answer ?? '',
-                $f->keywords ?? '',
-            ]);
-
-            foreach ($candidateTexts as $text) {
-                $normalizedText = $this->normalizeText($text);
-
-                if ($normalizedText === '') {
-                    continue;
-                }
-
-                if (str_contains($normalizedMessage, $normalizedText) || str_contains($normalizedText, $normalizedMessage)) {
-                    return true;
-                }
-
-                foreach ($this->extractKeywords($f) as $keyword) {
-                    if ($keyword !== '' && str_contains($normalizedMessage, $keyword)) {
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        });
-
-        if ($faq && isset($faq->answer)) {
-            return $faq->answer;
-        }
-
-        foreach ($this->defaultFaqs() as $defaultFaq) {
-            if ($this->matchesDefaultFaq($normalizedMessage, $defaultFaq['keywords'])) {
-                return $defaultFaq['answer'];
-            }
-        }
-
-        return "I'm not sure about that — please contact our staff directly.";
+        return 'I am not sure about that — please contact our staff directly.';
     }
 
     protected function defaultFaqs(): array
@@ -250,37 +431,51 @@ protected function findPresetAnswer(string $message): ?string
             [
                 'question' => 'What are your operating hours?',
                 'answer' => 'Our center is open Monday to Saturday, 6:00 AM to 6:00 PM. Please contact our staff to confirm holiday schedules.',
-                'keywords' => ['hours', 'open', 'opening', 'operating hours', 'what time', 'when are you open', 'working hours', 'hours of operation'],
+                'keywords' => 'hours, open, operating hours, what time, when are you open, working hours, hours of operation',
             ],
             [
                 'question' => 'How do I check my appointment schedule?',
                 'answer' => 'You can check your appointment using the "Check My Appointment" page on our homepage. You will need your patient reference code and birthdate.',
-                'keywords' => ['schedule', 'appointment', 'check appointment', 'view appointment', 'when is my appointment', 'reference code', 'my dialysis schedule'],
+                'keywords' => 'schedule, appointment, check appointment, view appointment, when is my appointment, reference code, my dialysis schedule',
             ],
             [
                 'question' => 'What should I bring to my appointment?',
                 'answer' => 'Please bring a valid ID, your patient reference code, and any current medications or prescriptions. Arrive at least 15 minutes early.',
-                'keywords' => ['bring', 'prepare', 'appointment requirements', 'what to bring', 'documents', 'medications', 'items to bring'],
+                'keywords' => 'bring, prepare, appointment requirements, what to bring, documents, medications, items to bring',
             ],
             [
                 'question' => 'How do I reschedule or cancel my appointment?',
                 'answer' => 'Please contact our staff directly by phone or visit the center at least 24 hours before your scheduled appointment.',
-                'keywords' => ['reschedule', 'cancel', 'change appointment', 'move appointment', 'postpone', 'rebook', 'cancel my session'],
+                'keywords' => 'reschedule, cancel, change appointment, move appointment, postpone, rebook, cancel my session',
             ],
             [
                 'question' => 'What is hemodialysis?',
                 'answer' => 'Hemodialysis is a treatment that filters waste, extra fluid, and salt from your blood when your kidneys can no longer do this well enough on their own.',
-                'keywords' => ['hemodialysis', 'what is hemodialysis', 'what happens in hemodialysis', 'kidney treatment filter blood'],
+                'keywords' => 'hemodialysis, what is hemodialysis, what happens in hemodialysis, kidney treatment filter blood',
             ],
         ];
     }
 
     protected function matchesDefaultFaq(string $normalizedMessage, array $keywords): bool
     {
+        $match = $this->findBestFaqMatch($normalizedMessage);
+
+        if ($match !== null) {
+            return true;
+        }
+
         foreach ($keywords as $keyword) {
             $normalizedKeyword = $this->normalizeText((string) $keyword);
 
-            if ($normalizedKeyword !== '' && str_contains($normalizedMessage, $normalizedKeyword)) {
+            if ($normalizedKeyword === '') {
+                continue;
+            }
+
+            if ($normalizedKeyword === $normalizedMessage) {
+                return true;
+            }
+
+            if (str_contains($normalizedMessage, $normalizedKeyword) && ! $this->isWeakKeyword($normalizedKeyword)) {
                 return true;
             }
         }
@@ -290,27 +485,85 @@ protected function findPresetAnswer(string $message): ?string
 
     protected function extractKeywords($faq): array
     {
-        if (! $faq || ! isset($faq->keywords)) {
+        if (! $faq) {
             return [];
         }
 
-        $list = preg_split('/[,;\n]+/', (string) $faq->keywords);
+        $keywords = $faq->keywords ?? '';
 
-        return array_values(array_filter(array_map(fn ($keyword) => $this->normalizeText((string) $keyword), $list ?? []), fn ($keyword) => $keyword !== ''));
+        return $this->extractKeywordsFromCsv((string) $keywords);
+    }
+
+    protected function extractKeywordsFromCsv(string $keywords): array
+    {
+        if ($keywords === '') {
+            return [];
+        }
+
+        $parts = preg_split('/[,;\n]+/', $keywords) ?: [];
+
+        $normalized = array_map(function ($value) {
+            $keyword = $this->normalizeText((string) $value);
+
+            return $keyword;
+        }, $parts);
+
+        return array_values(array_filter($normalized, fn (string $keyword) => $keyword !== ''));
     }
 
     protected function normalizeText(string $text): string
     {
-        $normalized = strtolower(preg_replace('/[^a-z0-9\s]/u', ' ', $text) ?? '');
+        $normalized = strtolower((string) $text);
+        $normalized = preg_replace('/[\x00-\x1F\x7F]/u', ' ', $normalized) ?? $normalized;
+        $normalized = preg_replace('/[^a-z0-9\s]/u', ' ', $normalized) ?? $normalized;
 
         return preg_replace('/\s+/', ' ', trim($normalized)) ?? '';
+    }
+
+    protected function tokenize(string $text): array
+    {
+        $text = $this->normalizeText($text);
+
+        if ($text === '') {
+            return [];
+        }
+
+        $stopWords = [
+            'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'can', 'could', 'do', 'does', 'for', 'from',
+            'have', 'he', 'if', 'in', 'is', 'it', 'me', 'my', 'of', 'on', 'or', 'our', 'please',
+            'she', 'that', 'the', 'their', 'them', 'they', 'this', 'to', 'us', 'we', 'where',
+            'who', 'why', 'with', 'you', 'your', 'how',
+        ];
+
+        $terms = array_filter(explode(' ', $text), fn (string $term) => $term !== '');
+
+        return array_values(array_filter($terms, fn (string $term) => ! in_array($term, $stopWords, true) && strlen($term) > 1));
+    }
+
+    protected function containsWholePhrase(string $haystack, string $needle): bool
+    {
+        $haystack = trim($haystack);
+        $needle = trim($needle);
+
+        if ($haystack === '' || $needle === '') {
+            return false;
+        }
+
+        if ($haystack === $needle) {
+            return true;
+        }
+
+        $regex = '/(^|\s)' . preg_quote($needle, '/') . '($|\s)/u';
+
+        return preg_match($regex, $haystack) === 1;
     }
 
     protected function systemPrompt(): string
     {
         return 'You are Diabot, an assistant for a dialysis center management system. '
-            . 'Only answer general questions about appointments, dialysis basics, and how to use the system. '
-            . 'Never give medical diagnosis or treatment advice. Keep answers short.';
+            . 'Answer general questions about appointments, dialysis basics, and how to use the system. '
+            . 'Do not diagnose medical conditions, prescribe treatment, or invent clinic hours, prices, or availability. '
+            . 'If the user needs medical or clinic-specific decisions, tell them to contact clinic staff or their healthcare provider.';
     }
 
     protected function buildPrompt(string $message): string
