@@ -1,30 +1,23 @@
-FROM php:8.2-fpm-alpine
+FROM php:8.2-apache
+
+RUN apt-get update && apt-get install -y \
+    libzip-dev zip unzip git curl libpng-dev \
+    && docker-php-ext-install pdo pdo_mysql zip gd
+
+RUN a2enmod rewrite
+
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
+COPY . .
 
-RUN apk add --no-cache \
-    bash \
-    git \
-    curl \
-    libpng-dev \
-    libzip-dev \
-    oniguruma-dev \
-    libxml2-dev \
-    zip \
-    unzip \
-    sqlite \
-    && docker-php-ext-install pdo_sqlite pdo_mysql mbstring exif pcntl bcmath gd intl zip
+RUN composer install --no-dev --optimize-autoloader
+RUN cp .env.example .env
 
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+RUN chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 
-COPY . /var/www/html
+RUN sed -i 's!/var/www/html!/var/www/html/public!g' /etc/apache2/sites-available/000-default.conf
 
-RUN composer install --no-interaction --prefer-dist --no-progress --no-dev \
-    && php artisan config:cache \
-    && php artisan route:cache \
-    && php artisan view:cache \
-    && chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
-
-EXPOSE 9000
-
-CMD ["php-fpm"]
+EXPOSE 80
+CMD ["apache2-foreground"]
