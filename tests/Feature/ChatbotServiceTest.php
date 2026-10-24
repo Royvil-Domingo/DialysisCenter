@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\ChatbotFaq;
+use App\Models\Setting;
 use App\Services\ChatbotService;
+use Database\Seeders\ChatbotFaqSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Session;
@@ -16,21 +18,30 @@ class ChatbotServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
         config([
             'services.chatbot.provider' => 'gemini',
             'services.chatbot.gemini_key' => 'test-gemini-key',
             'services.chatbot.openai_key' => 'test-openai-key',
         ]);
+
+        // The FAQ catalog now lives only in the DB — seed it so tests that
+        // rely on a preset answer (but don't create their own FAQ row) see
+        // the same catalog production will have.
+        $this->seed(ChatbotFaqSeeder::class);
     }
 
     public function test_exact_preset_match_returns_expected_answer_without_ai_call(): void
     {
+        Setting::set('operating_hours', 'Monday to Saturday, 6:00 AM to 6:00 PM');
+        Setting::set('clinic_contact_number', '(044) 123-4567');
+
         Http::fake();
 
         $reply = app(ChatbotService::class)->ask('What are your operating hours?');
 
         $this->assertSame(
-            'Our center is open Monday to Saturday, 6:00 AM to 6:00 PM. Please contact our staff to confirm holiday schedules.',
+            'Our center is open Monday to Saturday, 6:00 AM to 6:00 PM. Please contact (044) 123-4567 to confirm holiday schedules.',
             $reply
         );
         Http::assertSentCount(0);
@@ -38,6 +49,8 @@ class ChatbotServiceTest extends TestCase
 
     public function test_natural_phrasing_of_known_faq_returns_preset_without_api_call(): void
     {
+        Setting::set('operating_hours', 'Monday to Saturday, 6:00 AM to 6:00 PM');
+
         Http::fake();
 
         $reply = app(ChatbotService::class)->ask('When do you open?');
@@ -91,7 +104,7 @@ class ChatbotServiceTest extends TestCase
         config(['services.chatbot.provider' => 'none']);
         Http::fake();
 
-        $reply = app(ChatbotService::class)->ask('Can you explain how dialysis works?');
+        $reply = app(ChatbotService::class)->ask('Can you explain quantum computing?');
 
         $this->assertStringContainsString('not configured', strtolower($reply));
         Http::assertSentCount(0);
@@ -159,6 +172,9 @@ class ChatbotServiceTest extends TestCase
 
     public function test_chatbot_accepts_valid_csrf_token(): void
     {
+        Setting::set('operating_hours', 'Monday to Saturday, 6:00 AM to 6:00 PM');
+        Setting::set('clinic_contact_number', '(044) 123-4567');
+
         $token = 'test-csrf-token';
 
         $this->withSession(['_token' => $token])
@@ -167,7 +183,7 @@ class ChatbotServiceTest extends TestCase
                 'message' => 'What are your operating hours?',
             ])
             ->assertOk()
-            ->assertJsonPath('reply', 'Our center is open Monday to Saturday, 6:00 AM to 6:00 PM. Please contact our staff to confirm holiday schedules.');
+            ->assertJsonPath('reply', 'Our center is open Monday to Saturday, 6:00 AM to 6:00 PM. Please contact (044) 123-4567 to confirm holiday schedules.');
     }
 
     public function test_lookup_search_is_rate_limited(): void
@@ -183,5 +199,76 @@ class ChatbotServiceTest extends TestCase
             'patient_code' => 'INVALID',
             'birthdate' => '1990-01-01',
         ])->assertStatus(429);
+    }
+
+    public function test_specific_faq_outscores_a_generic_one_sharing_a_common_word(): void
+    {
+        Http::fake();
+
+        $reply = app(ChatbotService::class)->ask('How should I prepare for my first dialysis session?');
+
+        $this->assertStringContainsString('arrive a little early', strtolower($reply));
+    }
+
+    public function test_inactive_database_faq_is_ignored(): void
+    {
+        ChatbotFaq::create([
+            'question' => 'Do you offer home dialysis?',
+            'answer' => 'Yes we do.',
+            'keywords' => 'home dialysis, dialysis at home',
+            'is_active' => false,
+        ]);
+
+        Http::fake([
+            '*' => Http::response([
+                'candidates' => [
+                    ['content' => ['parts' => [['text' => 'General answer from AI.']]]],
+                ],
+            ], 200),
+        ]);
+
+        $reply = app(ChatbotService::class)->ask('Do you offer home dialysis?');
+
+        $this->assertSame('General answer from AI.', $reply);
+    }
+
+    public function test_newly_seeded_faq_is_immediately_searchable(): void
+    {
+        ChatbotFaq::create([
+            'question' => 'Can I bring a companion to my session?',
+            'answer' => 'Yes, one companion may accompany you.',
+            'keywords' => 'bring a companion, companion during dialysis, visitor during treatment',
+            'is_active' => true,
+        ]);
+
+        Http::fake();
+
+        $reply = app(ChatbotService::class)->ask('Can I bring a companion to my session?');
+
+        $this->assertSame('Yes, one companion may accompany you.', $reply);
+        Http::assertSentCount(0);
+    }
+
+    public function test_setting_placeholders_are_substituted_in_preset_answers(): void
+    {
+        Setting::set('clinic_contact_number', '0912-345-6789');
+        Setting::set('operating_hours', 'Mon–Sat, 7AM–5PM');
+
+        Http::fake();
+
+        $reply = app(ChatbotService::class)->ask('What are your operating hours?');
+
+        $this->assertStringContainsString('7AM–5PM', $reply);
+        $this->assertStringContainsString('0912-345-6789', $reply);
+        $this->assertStringNotContainsString('{{', $reply);
+    }
+
+    public function test_preset_match_does_not_fire_on_a_single_generic_word(): void
+    {
+        config(['services.chatbot.provider' => 'none']);
+
+        $reply = app(ChatbotService::class)->ask('I need some help with something unrelated.');
+
+        $this->assertStringContainsString('not configured', strtolower($reply));
     }
 }

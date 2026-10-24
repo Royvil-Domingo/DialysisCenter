@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\ChatbotFaq;
+use App\Models\Setting;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -23,7 +24,14 @@ class ChatbotService
         $matchedFaq = $this->findBestFaqMatch($message);
 
         if ($matchedFaq !== null) {
-            return $matchedFaq['answer'];
+            $answer = $this->applySettingPlaceholders($matchedFaq['answer']);
+
+            // Preset exchanges are stored too, so a follow-up question
+            // ("can you explain that more simply?") has real context.
+            $this->storeUserHistory($message);
+            $this->storeAiHistory('assistant', $answer);
+
+            return $answer;
         }
 
         $provider = $this->configuredProvider();
@@ -31,8 +39,6 @@ class ChatbotService
         if ($provider === 'none') {
             return 'The AI assistant is not configured for this clinic. Please contact our staff directly for help.';
         }
-
-        $this->storeUserHistory($message);
 
         if ($provider === 'gemini') {
             if (filled(config('services.chatbot.gemini_key'))) {
@@ -54,28 +60,32 @@ class ChatbotService
     }
 
     protected function askGemini(string $message): string
-    {
-        $key = (string) config('services.chatbot.gemini_key');
-        $payload = [
-            'system_instruction' => [
-                'parts' => [
-                    ['text' => $this->systemPrompt()],
-                ],
+{
+    $key = (string) config('services.chatbot.gemini_key');
+    $model = (string) config('services.chatbot.gemini_model', 'gemini-3.8-flash');
+    $payload = [
+        'system_instruction' => [
+            'parts' => [
+                ['text' => $this->systemPrompt()],
             ],
-            'contents' => $this->buildGeminiContents($message),
-            'generationConfig' => [
-                'maxOutputTokens' => 400,
-            ],
-        ];
+        ],
+        'contents' => $this->buildGeminiContents($message),
+        'generationConfig' => [
+            'maxOutputTokens' => 400,
+        ],
+    ];
 
-        try {
-            $response = Http::acceptJson()
-                ->timeout(20)
-                ->connectTimeout(10)
-                ->post(
-                    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=' . urlencode($key),
-                    $payload
-                );
+    try {
+        $response = Http::acceptJson()
+            ->withHeaders(['x-goog-api-key' => $key])
+            ->timeout(20)
+            ->connectTimeout(10)
+            ->post(
+                "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent",
+                $payload
+            );
+
+        // ...rest of the method stays exactly the same
 
             if (! $response->successful()) {
                 Log::error('Gemini chatbot API request failed.', [
@@ -95,9 +105,14 @@ class ChatbotService
                 return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
             }
 
-            $this->storeAiHistory('assistant', trim($reply));
+            $reply = trim($reply);
 
-            return trim($reply);
+            // Only persist the exchange once we actually have a reply —
+            // a failed call leaves no dangling turn in session history.
+            $this->storeUserHistory($message);
+            $this->storeAiHistory('assistant', $reply);
+
+            return $reply;
         } catch (ConnectionException $exception) {
             Log::error('Gemini chatbot connection failed.', [
                 'provider' => 'gemini',
@@ -149,9 +164,12 @@ class ChatbotService
                 return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
             }
 
-            $this->storeAiHistory('assistant', trim($reply));
+            $reply = trim($reply);
 
-            return trim($reply);
+            $this->storeUserHistory($message);
+            $this->storeAiHistory('assistant', $reply);
+
+            return $reply;
         } catch (ConnectionException $exception) {
             Log::error('OpenAI chatbot connection failed.', [
                 'provider' => 'openai',
@@ -314,12 +332,27 @@ class ChatbotService
             return true;
         }
 
-        return in_array($keyword, ['open', 'hours', 'schedule', 'time', 'when', 'bring', 'appointment'], true);
+        // Generic words that recur across many FAQs — alone they shouldn't
+        // win a match; paired with on-topic context words (below) they can.
+        return in_array($keyword, [
+            'open', 'hours', 'schedule', 'time', 'when', 'bring', 'appointment',
+            'dialysis', 'treatment', 'session', 'patient', 'patients', 'staff',
+            'clinic', 'center', 'help', 'information', 'document', 'documents',
+            'need', 'needed', 'want', 'contact',
+        ], true);
     }
 
     protected function hasWeakKeywordContext(array $messageTokens, string $keyword): bool
     {
-        $contextWords = ['when', 'what', 'time', 'hours', 'open', 'schedule', 'appointment', 'bring'];
+        $contextWords = [
+            'when', 'time', 'hours', 'open', 'schedule', 'appointment', 'bring',
+            'prepare', 'first', 'before', 'eat', 'medication', 'fluid',
+            'feel', 'unwell', 'bleeding', 'pain', 'dizzy', 'fever', 'infection',
+            'pay', 'payment', 'fee', 'bill', 'charge', 'insurance', 'philhealth', 'receipt',
+            'contact', 'address', 'located', 'directions', 'staff',
+            'dashboard', 'record', 'records', 'report', 'notification', 'error',
+            'access', 'permission', 'walk', 'late', 'miss', 'reschedule', 'cancel',
+        ];
 
         if ($keyword === '' || $messageTokens === []) {
             return false;
@@ -414,84 +447,13 @@ class ChatbotService
         session(['chatbot_history' => $history]);
     }
 
-    protected function fallbackFaq(string $message): string
-    {
-        $matchedFaq = $this->findBestFaqMatch($message);
-
-        if ($matchedFaq !== null) {
-            return $matchedFaq['answer'];
-        }
-
-        return 'I am not sure about that — please contact our staff directly.';
-    }
-
     protected function defaultFaqs(): array
     {
-        return [
-            [
-                'question' => 'What are your operating hours?',
-                'answer' => 'Our center is open Monday to Saturday, 6:00 AM to 6:00 PM. Please contact our staff to confirm holiday schedules.',
-                'keywords' => 'hours, open, operating hours, what time, when are you open, working hours, hours of operation',
-            ],
-            [
-                'question' => 'How do I check my appointment schedule?',
-                'answer' => 'You can check your appointment using the "Check My Appointment" page on our homepage. You will need your patient reference code and birthdate.',
-                'keywords' => 'schedule, appointment, check appointment, view appointment, when is my appointment, reference code, my dialysis schedule',
-            ],
-            [
-                'question' => 'What should I bring to my appointment?',
-                'answer' => 'Please bring a valid ID, your patient reference code, and any current medications or prescriptions. Arrive at least 15 minutes early.',
-                'keywords' => 'bring, prepare, appointment requirements, what to bring, documents, medications, items to bring',
-            ],
-            [
-                'question' => 'How do I reschedule or cancel my appointment?',
-                'answer' => 'Please contact our staff directly by phone or visit the center at least 24 hours before your scheduled appointment.',
-                'keywords' => 'reschedule, cancel, change appointment, move appointment, postpone, rebook, cancel my session',
-            ],
-            [
-                'question' => 'What is hemodialysis?',
-                'answer' => 'Hemodialysis is a treatment that filters waste, extra fluid, and salt from your blood when your kidneys can no longer do this well enough on their own.',
-                'keywords' => 'hemodialysis, what is hemodialysis, what happens in hemodialysis, kidney treatment filter blood',
-            ],
-        ];
-    }
-
-    protected function matchesDefaultFaq(string $normalizedMessage, array $keywords): bool
-    {
-        $match = $this->findBestFaqMatch($normalizedMessage);
-
-        if ($match !== null) {
-            return true;
-        }
-
-        foreach ($keywords as $keyword) {
-            $normalizedKeyword = $this->normalizeText((string) $keyword);
-
-            if ($normalizedKeyword === '') {
-                continue;
-            }
-
-            if ($normalizedKeyword === $normalizedMessage) {
-                return true;
-            }
-
-            if (str_contains($normalizedMessage, $normalizedKeyword) && ! $this->isWeakKeyword($normalizedKeyword)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    protected function extractKeywords($faq): array
-    {
-        if (! $faq) {
-            return [];
-        }
-
-        $keywords = $faq->keywords ?? '';
-
-        return $this->extractKeywordsFromCsv((string) $keywords);
+        // Intentionally empty — database/seeders/ChatbotFaqSeeder.php is the
+        // single source of truth for preset FAQs. Kept as a method (not
+        // deleted) so collectFaqCandidates()'s merge point still exists if
+        // an offline/no-DB fallback list is ever needed again.
+        return [];
     }
 
     protected function extractKeywordsFromCsv(string $keywords): array
@@ -502,11 +464,7 @@ class ChatbotService
 
         $parts = preg_split('/[,;\n]+/', $keywords) ?: [];
 
-        $normalized = array_map(function ($value) {
-            $keyword = $this->normalizeText((string) $value);
-
-            return $keyword;
-        }, $parts);
+        $normalized = array_map(fn ($value) => $this->normalizeText((string) $value), $parts);
 
         return array_values(array_filter($normalized, fn (string $keyword) => $keyword !== ''));
     }
@@ -531,7 +489,7 @@ class ChatbotService
         $stopWords = [
             'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'can', 'could', 'do', 'does', 'for', 'from',
             'have', 'he', 'if', 'in', 'is', 'it', 'me', 'my', 'of', 'on', 'or', 'our', 'please',
-            'she', 'that', 'the', 'their', 'them', 'they', 'this', 'to', 'us', 'we', 'where',
+            'she', 'should', 'that', 'the', 'their', 'them', 'they', 'this', 'to', 'us', 'we', 'what', 'where',
             'who', 'why', 'with', 'you', 'your', 'how',
         ];
 
@@ -558,16 +516,28 @@ class ChatbotService
         return preg_match($regex, $haystack) === 1;
     }
 
+    /**
+     * Replaces {{clinic_name}}, {{clinic_address}}, {{clinic_contact_number}},
+     * {{clinic_email}}, {{operating_hours}} in an FAQ answer with live values
+     * from the Settings page — the same source resources/views/welcome.blade.php
+     * already reads, so the chatbot never drifts out of sync with the homepage.
+     */
+    protected function applySettingPlaceholders(string $answer): string
+    {
+        return strtr($answer, [
+            '{{clinic_name}}' => Setting::get('clinic_name', 'Dialysis Center'),
+            '{{clinic_address}}' => Setting::get('clinic_address', 'Poblacion, San Ildefonso, Bulacan'),
+            '{{clinic_contact_number}}' => Setting::get('clinic_contact_number', '—'),
+            '{{clinic_email}}' => Setting::get('clinic_email', '—'),
+            '{{operating_hours}}' => Setting::get('operating_hours', 'Mon–Sat, 6:00 AM – 6:00 PM'),
+        ]);
+    }
+
     protected function systemPrompt(): string
     {
         return 'You are Diabot, an assistant for a dialysis center management system. '
             . 'Answer general questions about appointments, dialysis basics, and how to use the system. '
             . 'Do not diagnose medical conditions, prescribe treatment, or invent clinic hours, prices, or availability. '
             . 'If the user needs medical or clinic-specific decisions, tell them to contact clinic staff or their healthcare provider.';
-    }
-
-    protected function buildPrompt(string $message): string
-    {
-        return $this->systemPrompt() . "\n\nUser: " . $message;
     }
 }
