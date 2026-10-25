@@ -9,17 +9,10 @@
 
 html, body {
   min-height: 100%;
-  min-width: 320px;
-  overflow-x: auto;
-}
-
-* {
-  box-sizing: border-box;
 }
 
 body {
   min-height: 100vh;
-  min-width: 320px;
   display: flex;
   flex-direction: column;
   font-family: 'Poppins', system-ui, sans-serif;
@@ -561,7 +554,6 @@ h6 {
     #appSidebar {
         width: min(85vw, 300px) !important;
         max-width: 100vw;
-        min-width: 320px;
         height: 100vh;
         height: 100dvh;
     }
