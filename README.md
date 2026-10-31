@@ -15,7 +15,7 @@ There is no public self-registration — staff and admin accounts are created by
 1. **Clone the repo**
    ```bash
    https://github.com/Royvil-Domingo/DialysisCenter.git
-   cd <repo-name>
+   cd DialysisCenter
    ```
 
 2. **Install PHP dependencies**
