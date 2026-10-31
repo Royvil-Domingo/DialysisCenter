@@ -14,7 +14,7 @@ There is no public self-registration — staff and admin accounts are created by
 
 1. **Clone the repo**
    ```bash
-   git clone https://github.com/<your-username>/<repo-name>.git
+   https://github.com/Royvil-Domingo/DialysisCenter.git
    cd <repo-name>
    ```
 
