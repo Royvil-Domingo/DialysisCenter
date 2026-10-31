@@ -19,10 +19,10 @@ use Illuminate\Support\Facades\Route;
 Route::view('/', 'welcome')->name('welcome');
 Route::get('/lookup', [PatientLookupController::class, 'index'])->name('lookup');
 Route::post('/lookup/search', [PatientLookupController::class, 'search'])
-    ->middleware('throttle:10,1')
+    ->middleware('throttle:appointment-lookup')
     ->name('lookup.search');
 Route::post('/chatbot/message', [ChatbotController::class, 'respond'])
-    ->middleware('throttle:20,1')
+    ->middleware('throttle:chatbot')
     ->name('chatbot.message');
 // register disabled — staff/admin accounts are created by an admin only, never self-signup
 Auth::routes(['register' => false]);
@@ -31,14 +31,22 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     Route::middleware(['role:admin,staff'])->group(function () {
-        Route::resource('patients', PatientController::class);
-        Route::resource('appointments', AppointmentController::class);
-        Route::resource('treatment-records', TreatmentRecordController::class);
+        Route::resource('patients', PatientController::class)
+            ->middlewareFor(['store', 'update', 'destroy'], 'throttle:staff-writes');
+        Route::resource('appointments', AppointmentController::class)
+            ->middlewareFor(['store', 'update', 'destroy'], 'throttle:staff-writes');
+        Route::resource('treatment-records', TreatmentRecordController::class)
+            ->middlewareFor(['store', 'update', 'destroy'], 'throttle:staff-writes');
 
         // no show() in ChargeController — charges are viewed inline on the index list, not their own page
-        Route::resource('charges', ChargeController::class)->except(['destroy', 'show']);
-        Route::patch('/charges/{charge}/mark-paid', [ChargeController::class, 'markPaid'])->name('charges.markPaid');
-        Route::patch('/charges/{charge}/waive', [ChargeController::class, 'waive'])->name('charges.waive');
+        Route::resource('charges', ChargeController::class)->except(['destroy', 'show'])
+            ->middlewareFor(['store', 'update'], 'throttle:staff-writes');
+        Route::patch('/charges/{charge}/mark-paid', [ChargeController::class, 'markPaid'])
+            ->middleware('throttle:staff-writes')
+            ->name('charges.markPaid');
+        Route::patch('/charges/{charge}/waive', [ChargeController::class, 'waive'])
+            ->middleware('throttle:staff-writes')
+            ->name('charges.waive');
 
         Route::prefix('reports')->name('reports.')->group(function () {
             Route::get('/', [ReportController::class, 'index'])->name('index');
@@ -51,17 +59,24 @@ Route::middleware(['auth', 'active'])->group(function () {
 
     Route::middleware(['role:admin'])->prefix('admin')->name('admin.')->group(function () {
         // no destroy()/show() in UserManagementController — deactivate via toggle-active instead of deleting accounts
-        Route::resource('users', UserManagementController::class)->except(['destroy', 'show']);
-        Route::patch('/users/{user}/toggle-active', [UserManagementController::class, 'toggleActive'])->name('users.toggleActive');
+        Route::resource('users', UserManagementController::class)->except(['destroy', 'show'])
+            ->middlewareFor(['store', 'update'], 'throttle:staff-writes');
+        Route::patch('/users/{user}/toggle-active', [UserManagementController::class, 'toggleActive'])
+            ->middleware('throttle:staff-writes')
+            ->name('users.toggleActive');
 
         Route::get('/activity-logs', [ActivityLogController::class, 'index'])->name('activity-logs.index');
 
         Route::get('/settings', [SettingController::class, 'edit'])->name('settings.edit');
-        Route::put('/settings', [SettingController::class, 'update'])->name('settings.update'); // PUT, not POST — the Blade form spoofs @method('PUT')
+        Route::put('/settings', [SettingController::class, 'update'])
+            ->middleware('throttle:staff-writes')
+            ->name('settings.update'); // PUT, not POST — the Blade form spoofs @method('PUT')
 
         // -> resources/views/admin/notifications/create.blade.php (Vince), not top-level notifications/
         Route::get('/notifications/create', [NotificationController::class, 'create'])->name('notifications.create');
-        Route::post('/notifications', [NotificationController::class, 'store'])->name('notifications.store');
+        Route::post('/notifications', [NotificationController::class, 'store'])
+            ->middleware('throttle:staff-writes')
+            ->name('notifications.store');
     });
 });
 

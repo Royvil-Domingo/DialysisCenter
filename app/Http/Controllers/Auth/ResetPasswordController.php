@@ -13,6 +13,11 @@ class ResetPasswordController extends Controller
 
     protected $redirectTo = '/dashboard';
 
+    public function __construct()
+    {
+        $this->middleware('throttle:password-reset-submission')->only('reset');
+    }
+
     public function reset(Request $request)
     {
         $email = strtolower((string) $request->input('email'));

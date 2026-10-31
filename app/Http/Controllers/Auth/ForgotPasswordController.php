@@ -13,6 +13,11 @@ class ForgotPasswordController extends Controller
 {
     use SendsPasswordResetEmails;
 
+    public function __construct()
+    {
+        $this->middleware('throttle:password-reset')->only('sendResetLinkEmail');
+    }
+
     public function sendResetLinkEmail(Request $request)
     {
         $request->validate(['email' => 'required|email']);

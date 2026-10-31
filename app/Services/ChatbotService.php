@@ -7,6 +7,7 @@ use App\Models\Setting;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Throwable;
 
 class ChatbotService
@@ -68,16 +69,6 @@ class ChatbotService
         return 'The AI assistant is not configured for this clinic. Please contact our staff directly for help.';
     }
 
-    if (! preg_match('/^AIza[0-9A-Za-z\-_]{35}$/', $key)) {
-        Log::warning('Gemini API key format is invalid.', [
-            'provider' => 'gemini',
-            'model' => $model,
-            'key_prefix' => substr($key, 0, 4),
-        ]);
-
-        return 'The AI assistant is not configured for this clinic. Please contact our staff directly for help.';
-    }
-
     if ($model === '' || ! preg_match('/^gemini-[a-z0-9.-]+$/i', $model)) {
         Log::warning('Unsupported Gemini model configuration.', ['provider' => 'gemini', 'model' => $model]);
 
@@ -95,6 +86,10 @@ class ChatbotService
             'maxOutputTokens' => 400,
         ],
     ];
+
+    if (! $this->reserveAiRequest()) {
+        return $this->aiRateLimitMessage();
+    }
 
     try {
         $response = Http::acceptJson()
@@ -165,6 +160,10 @@ protected function askOpenAI(string $message): string
 
     $messages = $this->buildOpenAiMessages($message);
 
+    if (! $this->reserveAiRequest()) {
+        return $this->aiRateLimitMessage();
+    }
+
     try {
         $response = Http::withToken($key)
             ->acceptJson()
@@ -231,6 +230,28 @@ protected function askOpenAI(string $message): string
         }
 
         return 'none';
+    }
+
+    /**
+     * Reserve one daily external-AI request after the FAQ catalog has not
+     * produced an answer. Preset responses never reach this method.
+     */
+    protected function reserveAiRequest(): bool
+    {
+        $key = 'chatbot-ai:' . (request()->ip() ?: 'unknown');
+
+        if (RateLimiter::tooManyAttempts($key, 20)) {
+            return false;
+        }
+
+        RateLimiter::hit($key, 60 * 60 * 24);
+
+        return true;
+    }
+
+    protected function aiRateLimitMessage(): string
+    {
+        return 'The daily limit for questions that need the AI assistant has been reached. Please contact our staff directly for help.';
     }
 
     protected function findBestFaqMatch(string $message): ?array

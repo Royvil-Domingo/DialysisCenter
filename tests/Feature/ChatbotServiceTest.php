@@ -21,7 +21,7 @@ class ChatbotServiceTest extends TestCase
 
         config([
             'services.chatbot.provider' => 'gemini',
-            'services.chatbot.gemini_key' => 'test-gemini-key',
+            'services.chatbot.gemini_key' => 'AQ.test-gemini-key',
             'services.chatbot.openai_key' => 'test-openai-key',
         ]);
 
@@ -74,6 +74,7 @@ class ChatbotServiceTest extends TestCase
         $this->assertSame('The clinic can help with that.', $reply);
         Http::assertSent(function ($request) {
             $this->assertStringContainsString('gemini-2.5-flash', (string) $request->url());
+            $this->assertTrue($request->hasHeader('x-goog-api-key', 'AQ.test-gemini-key'));
             $this->assertArrayHasKey('systemInstruction', $request->data());
             $this->assertSame('user', $request->data()['contents'][count($request->data()['contents']) - 1]['role']);
             $this->assertSame('user', $request->data()['contents'][count($request->data()['contents']) - 1]['role']);
