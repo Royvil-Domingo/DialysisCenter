@@ -73,9 +73,9 @@ class ChatbotServiceTest extends TestCase
 
         $this->assertSame('The clinic can help with that.', $reply);
         Http::assertSent(function ($request) {
-            $this->assertStringContainsString('gemini-3.8-flash', (string) $request->url());
-            $this->assertStringContainsString('key=', (string) $request->url());
-            $this->assertArrayHasKey('system_instruction', $request->data());
+            $this->assertStringContainsString('gemini-2.5-flash', (string) $request->url());
+            $this->assertArrayHasKey('systemInstruction', $request->data());
+            $this->assertSame('user', $request->data()['contents'][count($request->data()['contents']) - 1]['role']);
             $this->assertSame('user', $request->data()['contents'][count($request->data()['contents']) - 1]['role']);
 
             return true;

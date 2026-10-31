@@ -61,10 +61,31 @@ class ChatbotService
 
     protected function askGemini(string $message): string
 {
-    $key = (string) config('services.chatbot.gemini_key');
-    $model = (string) config('services.chatbot.gemini_model', 'gemini-3.8-flash');
+    $key = trim((string) config('services.chatbot.gemini_key'));
+    $model = trim((string) config('services.chatbot.gemini_model', 'gemini-2.5-flash'));
+
+    if ($key === '') {
+        return 'The AI assistant is not configured for this clinic. Please contact our staff directly for help.';
+    }
+
+    if (! preg_match('/^AIza[0-9A-Za-z\-_]{35}$/', $key)) {
+        Log::warning('Gemini API key format is invalid.', [
+            'provider' => 'gemini',
+            'model' => $model,
+            'key_prefix' => substr($key, 0, 4),
+        ]);
+
+        return 'The AI assistant is not configured for this clinic. Please contact our staff directly for help.';
+    }
+
+    if ($model === '' || ! preg_match('/^gemini-[a-z0-9.-]+$/i', $model)) {
+        Log::warning('Unsupported Gemini model configuration.', ['provider' => 'gemini', 'model' => $model]);
+
+        return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
+    }
+
     $payload = [
-        'system_instruction' => [
+        'systemInstruction' => [
             'parts' => [
                 ['text' => $this->systemPrompt()],
             ],
@@ -85,107 +106,117 @@ class ChatbotService
                 $payload
             );
 
-        // ...rest of the method stays exactly the same
-
-            if (! $response->successful()) {
-                Log::error('Gemini chatbot API request failed.', [
-                    'status' => $response->status(),
-                    'provider' => 'gemini',
-                    'error' => is_string($response->json('error.message')) ? $response->json('error.message') : 'No error message returned',
-                ]);
-
-                return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
-            }
-
-            $reply = $response->json('candidates.0.content.parts.0.text');
-
-            if (! is_string($reply) || trim($reply) === '') {
-                Log::warning('Gemini chatbot returned an empty response.', ['provider' => 'gemini']);
-
-                return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
-            }
-
-            $reply = trim($reply);
-
-            // Only persist the exchange once we actually have a reply —
-            // a failed call leaves no dangling turn in session history.
-            $this->storeUserHistory($message);
-            $this->storeAiHistory('assistant', $reply);
-
-            return $reply;
-        } catch (ConnectionException $exception) {
-            Log::error('Gemini chatbot connection failed.', [
+        if (! $response->successful()) {
+            Log::error('Gemini chatbot API request failed.', [
+                'status' => $response->status(),
                 'provider' => 'gemini',
-                'exception' => class_basename($exception),
-            ]);
-
-            return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
-        } catch (Throwable $exception) {
-            Log::error('Unexpected Gemini chatbot error.', [
-                'provider' => 'gemini',
-                'exception' => class_basename($exception),
+                'error' => is_string($response->json('error.message')) ? $response->json('error.message') : 'No error message returned',
             ]);
 
             return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
         }
-    }
 
-    protected function askOpenAI(string $message): string
-    {
-        $key = (string) config('services.chatbot.openai_key');
-        $messages = $this->buildOpenAiMessages($message);
+        $reply = $this->extractGeminiReply($response->json());
 
-        try {
-            $response = Http::withToken($key)
-                ->acceptJson()
-                ->timeout(20)
-                ->connectTimeout(10)
-                ->post('https://api.openai.com/v1/chat/completions', [
-                    'model' => 'gpt-4o-mini',
-                    'messages' => $messages,
-                    'temperature' => 0.5,
-                ]);
-
-            if (! $response->successful()) {
-                Log::error('OpenAI chatbot API request failed.', [
-                    'status' => $response->status(),
-                    'provider' => 'openai',
-                    'error' => is_string($response->json('error.message')) ? $response->json('error.message') : 'No error message returned',
-                ]);
-
-                return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
-            }
-
-            $reply = $response->json('choices.0.message.content');
-
-            if (! is_string($reply) || trim($reply) === '') {
-                Log::warning('OpenAI chatbot returned an empty response.', ['provider' => 'openai']);
-
-                return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
-            }
-
-            $reply = trim($reply);
-
-            $this->storeUserHistory($message);
-            $this->storeAiHistory('assistant', $reply);
-
-            return $reply;
-        } catch (ConnectionException $exception) {
-            Log::error('OpenAI chatbot connection failed.', [
-                'provider' => 'openai',
-                'exception' => class_basename($exception),
-            ]);
+        if (! is_string($reply) || trim($reply) === '') {
+            Log::warning('Gemini chatbot returned an empty response.', ['provider' => 'gemini']);
 
             return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
-        } catch (Throwable $exception) {
-            Log::error('Unexpected OpenAI chatbot error.', [
-                'provider' => 'openai',
+        }
+
+        $reply = trim($reply);
+
+        $this->storeUserHistory($message);
+        $this->storeAiHistory('assistant', $reply);
+
+        return $reply;
+    } catch (ConnectionException $exception) {
+        Log::error('Gemini chatbot connection failed.', [
+                'provider' => 'gemini',
                 'exception' => class_basename($exception),
+            'message' => $exception->getMessage(),
+        ]);
+
+        return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
+    } catch (Throwable $exception) {
+        Log::error('Unexpected Gemini chatbot error.', [
+            'provider' => 'gemini',
+            'exception' => class_basename($exception),
+        ]);
+
+        return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
+    }
+}
+
+protected function askOpenAI(string $message): string
+{
+    $key = trim((string) config('services.chatbot.openai_key'));
+    $model = trim((string) config('services.chatbot.openai_model', 'gpt-4o-mini'));
+
+    if ($key === '') {
+        return 'The AI assistant is not configured for this clinic. Please contact our staff directly for help.';
+    }
+
+    if ($model === '' || ! preg_match('/^[a-z0-9.-]+$/i', $model)) {
+        Log::warning('Unsupported OpenAI model configuration.', ['provider' => 'openai', 'model' => $model]);
+
+        return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
+    }
+
+    $messages = $this->buildOpenAiMessages($message);
+
+    try {
+        $response = Http::withToken($key)
+            ->acceptJson()
+            ->timeout(20)
+            ->connectTimeout(10)
+            ->post('https://api.openai.com/v1/chat/completions', [
+                'model' => $model,
+                'messages' => $messages,
+                'temperature' => 0.5,
+            ]);
+
+        if (! $response->successful()) {
+            Log::error('OpenAI chatbot API request failed.', [
+                'status' => $response->status(),
+                'provider' => 'openai',
+                'error' => is_string($response->json('error.message')) ? $response->json('error.message') : 'No error message returned',
             ]);
 
             return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
         }
+
+        $reply = $this->extractOpenAiReply($response->json());
+
+        if (! is_string($reply) || trim($reply) === '') {
+            Log::warning('OpenAI chatbot returned an empty response.', ['provider' => 'openai']);
+
+            return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
+        }
+
+        $reply = trim($reply);
+
+        $this->storeUserHistory($message);
+        $this->storeAiHistory('assistant', $reply);
+
+        return $reply;
+    } catch (ConnectionException $exception) {
+        Log::error('OpenAI chatbot connection failed.', [
+            'provider' => 'openai',
+            'exception' => class_basename($exception),
+            'message' => $exception->getMessage(),
+        ]);
+
+        return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
+    } catch (Throwable $exception) {
+        Log::error('Unexpected OpenAI chatbot error.', [
+            'provider' => 'openai',
+            'exception' => class_basename($exception),
+        ]);
+
+        return 'The AI assistant is temporarily unavailable. Please contact our staff directly.';
     }
+}
 
     protected function configuredProvider(): string
     {
@@ -400,6 +431,60 @@ class ChatbotService
         $messages[] = ['role' => 'user', 'content' => $message];
 
         return $messages;
+    }
+
+    protected function extractGeminiReply(mixed $json): ?string
+    {
+        if (! is_array($json)) {
+            return null;
+        }
+
+        $parts = $json['candidates'][0]['content']['parts'] ?? [];
+
+        if (! is_array($parts) || $parts === []) {
+            return null;
+        }
+
+        $text = '';
+
+        foreach ($parts as $part) {
+            if (! is_array($part)) {
+                continue;
+            }
+
+            if (isset($part['text']) && is_string($part['text'])) {
+                $text .= $part['text'];
+            }
+        }
+
+        return $text !== '' ? $text : null;
+    }
+
+    protected function extractOpenAiReply(mixed $json): ?string
+    {
+        if (! is_array($json)) {
+            return null;
+        }
+
+        $content = $json['choices'][0]['message']['content'] ?? null;
+
+        if (is_string($content)) {
+            return $content;
+        }
+
+        if (is_array($content)) {
+            $text = '';
+
+            foreach ($content as $part) {
+                if (isset($part['text']) && is_string($part['text'])) {
+                    $text .= $part['text'];
+                }
+            }
+
+            return $text !== '' ? $text : null;
+        }
+
+        return null;
     }
 
     protected function recentConversationHistory(): array
