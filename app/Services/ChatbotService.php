@@ -94,6 +94,7 @@ class ChatbotService
     try {
         $response = Http::acceptJson()
             ->withHeaders(['x-goog-api-key' => $key])
+            ->withOptions(['force_ip_resolve' => 'v4'])
             ->timeout(20)
             ->connectTimeout(10)
             ->post(
