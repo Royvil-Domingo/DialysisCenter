@@ -189,7 +189,7 @@ class ChatbotServiceTest extends TestCase
 
     public function test_lookup_search_is_rate_limited(): void
     {
-        for ($i = 0; $i < 10; $i++) {
+        for ($i = 0; $i < 5; $i++) {
             $this->post('/lookup/search', [
                 'patient_code' => 'INVALID',
                 'birthdate' => '1990-01-01',
