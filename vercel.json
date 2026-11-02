@@ -1,18 +1,14 @@
 {
-    "$schema": "https://openapi.vercel.sh/vercel.json",
-    "functions": {
-      "app": {
-        "architecture": "x86_64",
-        "runtime": "@vercel/do-not-use",
-        "framework": "Laravel"
-      }
-    },
-    "build": {
-      "app": {
-        "entrypoint": "Dockerfile.vercel"
-      }
-    },
-    "routes": [
-      { "src": "/(.*)", "dest": "/app/public/$1" }
-    ]
-  }
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "app": {
+      "root": ".",
+      "entrypoint": "Dockerfile.vercel",
+      "runtime": "container",
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/" }
+  ]
+}

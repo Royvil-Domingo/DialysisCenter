@@ -21,6 +21,8 @@
 </div>
 <script>
 const chatUrl = "{{ route('chatbot.message') }}";
+let chatRequestPending = false;
+
 function toggleChat(){ document.getElementById('chatCard').classList.toggle('d-none'); }
 function chatAdd(who, text){
   const d = document.createElement('div'); d.className = 'msg msg-' + who; d.textContent = text;
@@ -30,12 +32,15 @@ function chatAdd(who, text){
 async function sendChat(text) {
     text = (text || '').trim();
 
-    if (!text) return;
+    if (!text || chatRequestPending) return;
+
+    chatRequestPending = true;
+    const input = document.getElementById('chatInput');
+    const sendButton = document.querySelector('#chatForm button[type="submit"]');
 
     chatAdd('me', text);
-
-    const wait = chatAdd('bot', 'Thinking...');
-    const input = document.getElementById('chatInput');
+    const wait = chatAdd('bot', 'Diabot is typing...');
+    if (sendButton) sendButton.disabled = true;
 
     try {
         const csrfMeta = document.querySelector(
@@ -43,7 +48,7 @@ async function sendChat(text) {
         );
 
         if (!csrfMeta) {
-            throw new Error('Missing CSRF token.');
+            throw new Error('Your session is missing a security token. Please refresh the page and try again.');
         }
 
         const response = await fetch(chatUrl, {
@@ -53,49 +58,47 @@ async function sendChat(text) {
                 'Accept': 'application/json',
                 'X-CSRF-TOKEN': csrfMeta.content
             },
-            body: JSON.stringify({
-                message: text
-            })
+            body: JSON.stringify({ message: text })
         });
 
-        const data = await response.json().catch(() => ({}));
+        let data = {};
+        try {
+            data = await response.json();
+        } catch (error) {
+            data = {};
+        }
 
         if (!response.ok) {
-            console.error('Chatbot HTTP error:', response.status, data);
-
-            if (response.status === 419) {
-                throw new Error(
-                    'Your session expired. Refresh the page and try again.'
-                );
-            }
-
-            if (response.status === 429) {
-                throw new Error(
-                    'Too many messages. Please wait a moment.'
-                );
-            }
-
-            throw new Error(
-                data.message || `Request failed (${response.status}).`
-            );
+            const reason = response.status === 419
+                ? 'Your session expired. Refresh the page and try again.'
+                : response.status === 429
+                    ? 'Too many requests. Please wait a moment and try again.'
+                    : 'The chatbot is temporarily unavailable. Please try again in a moment.';
+            throw new Error(reason);
         }
 
         if (typeof data.reply !== 'string' || !data.reply.trim()) {
-            throw new Error('The server returned an empty reply.');
+            throw new Error('The chatbot returned an empty reply. Please try again.');
         }
 
         wait.textContent = data.reply;
-
     } catch (error) {
         console.error('Chatbot request failed:', error);
-        wait.textContent = error.message ||
-            'Unable to contact the chatbot. Please try again.';
+        wait.textContent = error && error.message ? error.message : 'Unable to contact the chatbot right now. Please try again.';
     } finally {
-        input.focus();
+        chatRequestPending = false;
+        if (sendButton) sendButton.disabled = false;
+        if (input) {
+            input.value = '';
+            input.focus();
+        }
     }
 }
 
 document.getElementById('chatForm').addEventListener('submit', e => {
-  e.preventDefault(); const i = document.getElementById('chatInput'); const t = i.value; i.value = ''; sendChat(t);
+  e.preventDefault();
+  const i = document.getElementById('chatInput');
+  const t = i.value;
+  sendChat(t);
 });
 </script>

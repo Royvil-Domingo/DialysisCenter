@@ -7,6 +7,7 @@ use App\Models\Appointment;
 use App\Models\Patient;
 use App\Models\TreatmentRecord;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class TreatmentRecordController extends Controller
 {
@@ -79,7 +80,7 @@ class TreatmentRecordController extends Controller
      */
     public function update(Request $request, TreatmentRecord $treatmentRecord)
     {
-        $treatmentRecord->update($this->validated($request));
+        $treatmentRecord->update($this->validated($request, $treatmentRecord));
 
         ActivityLog::record('update', 'treatment-records', "Updated treatment record #{$treatmentRecord->id}");
 
@@ -98,11 +99,21 @@ class TreatmentRecordController extends Controller
         return redirect()->route('treatment-records.index')->with('success', 'Treatment record deleted.');
     }
 
-    protected function validated(Request $request): array
+    protected function validated(Request $request, ?TreatmentRecord $record = null): array
     {
-        return $request->validate([
-            'patient_id' => 'required|exists:patients,id',
-            'appointment_id' => 'nullable|exists:appointments,id',
+        $validator = Validator::make($request->all(), [
+            'patient_id' => [
+                'required',
+                'exists:patients,id',
+                function (string $attribute, mixed $value, \Closure $fail) {
+                    $patient = Patient::find($value);
+
+                    if ($patient && $patient->status !== 'active') {
+                        $fail('Only active patients can have treatment records.');
+                    }
+                },
+            ],
+            'appointment_id' => ['nullable', 'exists:appointments,id'],
             'session_date' => 'required|date',
             'pre_weight_kg' => 'nullable|numeric|min:0|max:999',
             'post_weight_kg' => 'nullable|numeric|min:0|max:999',
@@ -113,5 +124,31 @@ class TreatmentRecordController extends Controller
             'complications' => 'nullable|string',
             'status' => 'nullable|in:in_progress,completed',
         ]);
+
+        $validator->after(function ($validator) use ($request, $record) {
+            $appointmentId = $request->input('appointment_id');
+            $patientId = $request->input('patient_id');
+
+            if (! $appointmentId || ! $patientId) {
+                return;
+            }
+
+            $appointment = Appointment::find($appointmentId);
+            if (! $appointment) {
+                return;
+            }
+
+            if ((int) $appointment->patient_id !== (int) $patientId) {
+                $validator->errors()->add('patient_id', 'The selected appointment belongs to a different patient.');
+            }
+
+            if ($record && $record->appointment_id && $record->appointment_id != $appointmentId && (int) $record->patient_id !== (int) $patientId) {
+                $validator->errors()->add('patient_id', 'The treatment record cannot be reassigned to a different patient.');
+            }
+        });
+
+        $validator->validate();
+
+        return $validator->validated();
     }
 }

@@ -17,7 +17,7 @@
                 @include('partials.field', ['name' => 'password', 'label' => 'Password', 'type' => 'password', 'col' => 'col-12', 'required' => true])
                 <div class="col-12 d-flex justify-content-between align-items-center">
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="remember" id="remember" {{ old('remember') ? 'checked' : '' }}><label class="form-check-label small" for="remember">Remember me</label></div>
-                    @if (Route::has('password.request'))<a class="small" href="{{ route('password.request') }}">Forgot Password?</a>@endif
+                    {{-- @if (Route::has('password.request'))<a class="small" href="{{ route('password.request') }}">Forgot Password?</a>@endif --}}
                 </div>
                 <div class="col-12"><button type="submit" class="btn btn-login">Login</button></div>
             </form>

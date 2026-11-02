@@ -74,6 +74,16 @@ class UserManagementController extends Controller
      */
     public function update(Request $request, User $user)
     {
+        $currentUser = $request->user();
+
+        if ($currentUser && $currentUser->is($user) && $validatedRole = $request->input('role')) {
+            if ($validatedRole !== 'admin') {
+                return back()->withErrors([
+                    'role' => 'You cannot remove your own administrator role.',
+                ]);
+            }
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|max:150',
             'email' => ['required', 'email', Rule::unique('users', 'email')->ignore($user->id)],
@@ -81,6 +91,12 @@ class UserManagementController extends Controller
             'role' => 'required|in:admin,staff',
             'contact_number' => 'nullable|string|max:20',
         ]);
+
+        if ($currentUser && $currentUser->is($user) && $validated['role'] !== 'admin') {
+            return back()->withErrors([
+                'role' => 'You cannot remove your own administrator role.',
+            ]);
+        }
 
         if (!empty($validated['password'])) {
             $validated['password'] = Hash::make($validated['password']);
@@ -95,8 +111,16 @@ class UserManagementController extends Controller
         return redirect()->route('admin.users.index')->with('success', 'Account updated.');
     }
 
-    public function toggleActive(User $user)
+    public function toggleActive(Request $request, User $user)
     {
+        $currentUser = $request->user();
+
+        if ($currentUser && $currentUser->is($user)) {
+            return back()->withErrors([
+                'user' => 'You cannot deactivate your own active account.',
+            ]);
+        }
+
         $user->update(['is_active' => !$user->is_active]);
 
         ActivityLog::record('toggle-active', 'users', "Set {$user->name} to " . ($user->is_active ? 'active' : 'inactive'));

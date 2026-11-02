@@ -1,0 +1,17 @@
+.git
+.gitignore
+.env
+.env.*
+*.log
+node_modules
+vendor
+storage/app/public
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+public/build
+public/hot
+*.sqlite
+*.db
+*.sql
+*.dump

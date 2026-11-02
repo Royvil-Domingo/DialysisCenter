@@ -5,7 +5,7 @@
             <form method="POST" action="{{ route('logout') }}" class="d-flex justify-content-center gap-2 mb-2">
                 @csrf
                 <button type="button" class="btn btn-soft px-4" data-bs-dismiss="modal">No</button>
-                <button type="submit" class="btn btn-navy px-4">Yes</button>
+                <button type="submit" class="btn btn-navy px-4" style="background-color: #dc2626;">Yes</button>
             </form>
         </div>
     </div>
