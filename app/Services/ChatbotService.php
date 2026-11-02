@@ -63,8 +63,7 @@ class ChatbotService
     protected function askGemini(string $message): string
 {
     $key = trim((string) config('services.chatbot.gemini_key'));
-    $model = trim((string) config('services.chatbot.gemini_model', 'gemini-2.5-flash'));
-
+    $model = trim((string) config('services.chatbot.gemini_model', 'gemini-3.8-flash'));
     if ($key === '') {
         return 'The AI assistant is not configured for this clinic. Please contact our staff directly for help.';
     }
