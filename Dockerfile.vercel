@@ -7,9 +7,9 @@ RUN install-php-extensions pdo_mysql mbstring exif pcntl bcmath gd intl zip
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-RUN composer install --no-dev --optimize-autoloader \
-    && php artisan config:cache \
-    && php artisan route:cache \
-    && php artisan view:cache
+RUN composer install --no-dev --optimize-autoloader
 
+RUN chmod +x /app/docker-entrypoint.sh
+
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["frankenphp", "php-server", "--root", "/app/public"]
