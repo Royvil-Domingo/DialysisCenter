@@ -4,11 +4,10 @@
     "app": {
       "root": ".",
       "entrypoint": "Dockerfile.vercel",
-      "runtime": "container",
-      "maxDuration": 30
+      "runtime": "container"
     }
   },
   "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
+    { "source": "/(.*)", "destination": { "service": "app" } }
   ]
 }
