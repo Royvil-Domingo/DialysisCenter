@@ -18,9 +18,29 @@ class DemoModeTest extends TestCase
             throw new \RuntimeException('Demo route attempted a database query.');
         });
 
-        $this->get('/demo')->assertOk()->assertSee('Demo Mode');
-        $this->get('/demo/dashboard')->assertOk()->assertSee('Demo Dashboard');
-        $this->get('/demo/patients')->assertOk()->assertSee('Demo Patients');
+        foreach ([
+            '/demo',
+            '/demo/dashboard',
+            '/demo/patients',
+            '/demo/patients/1',
+            '/demo/appointments',
+            '/demo/appointments/create',
+            '/demo/treatment-records',
+            '/demo/charges',
+            '/demo/reports',
+            '/demo/notifications',
+        ] as $path) {
+            $this->get($path)->assertOk();
+        }
+
+        $this->get('/demo')->assertSee('Demo Mode');
+        $this->get('/demo/dashboard')->assertSee('Demo Dashboard');
+        $this->get('/demo/patients')->assertSee('Demo Patients');
+    }
+
+    public function test_unknown_demo_patient_returns_not_found(): void
+    {
+        $this->get('/demo/patients/999')->assertNotFound();
     }
 
     public function test_demo_routes_cannot_mutate_real_data(): void

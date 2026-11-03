@@ -23,7 +23,12 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         RateLimiter::for('appointment-lookup', function (Request $request) {
-            return Limit::perMinute(5)->by('appointment-lookup:'.$request->ip());
+            $patientCodeHash = hash('sha256', strtoupper(trim((string) $request->input('patient_code'))));
+
+            return [
+                Limit::perMinute(5)->by('appointment-lookup:'.$request->ip()),
+                Limit::perMinute(5)->by('appointment-lookup-code:'.$patientCodeHash),
+            ];
         });
 
         RateLimiter::for('chatbot', function (Request $request) {

@@ -39,7 +39,7 @@ There is no public self-registration — staff and admin accounts are created by
    Open `.env` and fill in:
    - `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` — your local MySQL credentials.
    - `ADMIN_EMAIL` and `ADMIN_PASSWORD` — the first admin account's login. **Set these before step 6** — the seeder that creates the admin account reads them once, at seed time, and silently does nothing if either is blank.
-   - `CHATBOT_PROVIDER`, `GEMINI_API_KEY` / `OPENAI_API_KEY` — optional. Leave `CHATBOT_PROVIDER` unset (or `none`) to run without AI; Diabot still answers its ~50 seeded FAQs either way and only calls out to Gemini/OpenAI for questions outside that list.
+   - `OPENROUTER_API_KEY` — optional. Without a key, Diabot still answers its seeded FAQs and asks patients to contact staff for questions outside that list.
 
 5. **Create the database**
    Create an empty MySQL database matching `DB_DATABASE` from your `.env` (e.g. `dialysis_center`) in phpMyAdmin or the `mysql` CLI.
@@ -83,4 +83,4 @@ An appointment starts as `scheduled`. Staff mark it `completed` after the visit,
 
 ## Diabot (the chatbot)
 
-Diabot checks its seeded FAQ library first and answers instantly, with no external API call, whenever it finds a confident match. If a question isn't covered, and a provider is configured (`CHATBOT_PROVIDER=gemini` or `openai` in `.env`, with the matching API key), it falls back to that provider for a general, non-diagnostic answer. With no provider configured, Diabot still answers every FAQ in its library — it just tells patients to contact staff for anything outside that list instead of calling an AI.
+Diabot checks its seeded FAQ library first and answers instantly, with no external API call, whenever it finds a confident match. If a question isn't covered and `OPENROUTER_API_KEY` is set in `.env`, it falls back to OpenRouter using the fixed `nvidia/nemotron-3.5-super-vl:free` model for a general, non-diagnostic answer. The model is fixed in the application and is not configurable through environment settings. Without an API key, Diabot answers known FAQs and asks patients to contact staff for questions outside that list.

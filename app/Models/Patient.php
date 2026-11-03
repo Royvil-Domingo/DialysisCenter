@@ -27,7 +27,7 @@ class Patient extends Model
 
         static::created(function ($patient) {
             $patient->update([
-                'patient_code' => 'PT-' . strtoupper(substr(bin2hex(random_bytes(4)), 0, 8)),
+                'patient_code' => 'PT-'.strtoupper(bin2hex(random_bytes(12))),
             ]);
         });
     }

@@ -35,8 +35,8 @@ Route::middleware(['auth', 'active'])->group(function () {
             ->middlewareFor(['store', 'update', 'destroy'], 'throttle:staff-writes');
         Route::resource('appointments', AppointmentController::class)
             ->middlewareFor(['store', 'update', 'destroy'], 'throttle:staff-writes');
-        Route::resource('treatment-records', TreatmentRecordController::class)
-            ->middlewareFor(['store', 'update', 'destroy'], 'throttle:staff-writes');
+        Route::resource('treatment-records', TreatmentRecordController::class)->except(['destroy'])
+            ->middlewareFor(['store', 'update'], 'throttle:staff-writes');
 
         // no show() in ChargeController — charges are viewed inline on the index list, not their own page
         Route::resource('charges', ChargeController::class)->except(['destroy', 'show'])

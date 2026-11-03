@@ -31,5 +31,6 @@
             </tbody>
         </table>
     </div>
+    @include('partials.pagination', ['paginator' => $appointments])
 </div>
 @endsection

@@ -57,6 +57,7 @@ class ChargeController extends Controller
 
         return redirect()->route('charges.index')->with('success', 'Charge recorded.');
     }
+
     /**
      * Display the specified resource.
      */
@@ -139,7 +140,7 @@ class ChargeController extends Controller
             ],
             'treatment_record_id' => ['nullable', 'exists:treatment_records,id'],
             'description' => 'required|string|max:255',
-            'amount' => 'required|numeric|min:0',
+            'amount' => 'required|numeric|decimal:0,2|min:0|max:99999999.99',
             'charge_date' => 'required|date',
         ]);
 
@@ -164,7 +165,6 @@ class ChargeController extends Controller
 
         return $validator->validated();
     }
-
 
     /**
      * Remove the specified resource from storage.

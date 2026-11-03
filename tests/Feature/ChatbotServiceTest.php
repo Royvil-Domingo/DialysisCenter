@@ -20,9 +20,7 @@ class ChatbotServiceTest extends TestCase
         parent::setUp();
 
         config([
-            'services.chatbot.provider' => 'gemini',
-            'services.chatbot.gemini_key' => 'AQ.test-gemini-key',
-            'services.chatbot.openai_key' => 'test-openai-key',
+            'services.chatbot.openrouter_key' => 'test-openrouter-key',
         ]);
 
         // The FAQ catalog now lives only in the DB — seed it so tests that
@@ -41,7 +39,7 @@ class ChatbotServiceTest extends TestCase
         $reply = app(ChatbotService::class)->ask('What are your operating hours?');
 
         $this->assertSame(
-            'Our center is open Monday to Saturday, 6:00 AM to 6:00 PM. Please contact (044) 123-4567 to confirm holiday schedules.',
+            'Our center is open Monday to Saturday, 6:00 AM to 6:00 PM. Please contact the center to confirm holiday schedules.',
             $reply
         );
         Http::assertSentCount(0);
@@ -59,12 +57,53 @@ class ChatbotServiceTest extends TestCase
         Http::assertSentCount(0);
     }
 
-    public function test_unknown_question_uses_the_configured_ai_provider(): void
+    public function test_three_homepage_chat_suggestions_return_relevant_answers_without_ai(): void
+    {
+        Setting::set('operating_hours', 'Monday to Saturday, 6:00 AM to 6:00 PM');
+        Setting::set('clinic_contact_number', '(044) 123-4567');
+        Http::fake();
+
+        $hoursReply = app(ChatbotService::class)->ask('What are your operating hours?');
+        $scheduleReply = app(ChatbotService::class)->ask('How do I check my appointment schedule?');
+        $bringReply = app(ChatbotService::class)->ask('What should I bring to my appointment?');
+
+        $this->assertStringContainsString('Monday to Saturday, 6:00 AM to 6:00 PM', $hoursReply);
+        $this->assertStringNotContainsString('—', $hoursReply);
+        $this->assertStringContainsString('patient reference code and birthdate', strtolower($scheduleReply));
+        $this->assertStringContainsString('valid id', strtolower($bringReply));
+        $this->assertStringContainsString('patient reference code', strtolower($bringReply));
+        $this->assertStringContainsString('15 minutes early', strtolower($bringReply));
+        Http::assertSentCount(0);
+    }
+
+    public function test_math_and_code_requests_are_refused_before_faq_or_ai(): void
+    {
+        Http::fake();
+        $service = app(ChatbotService::class);
+
+        foreach ([
+            'Can you solve 24 times 18?',
+            'Write Python code for me.',
+            'Help me with my algebra homework.',
+        ] as $question) {
+            $reply = $service->ask($question);
+
+            $this->assertStringContainsString('I cannot help with math or coding requests.', $reply);
+            $this->assertStringContainsString('appointments', $reply);
+        }
+
+        Http::assertSentCount(0);
+
+        $dateReply = $service->ask('What is my appointment date: 2026-11-03?');
+        $this->assertStringNotContainsString('I cannot help with math or coding requests.', $dateReply);
+    }
+
+    public function test_unknown_question_uses_the_fixed_openrouter_model(): void
     {
         Http::fake([
             '*' => Http::response([
-                'candidates' => [
-                    ['content' => ['parts' => [['text' => 'The clinic can help with that.']]]],
+                'choices' => [
+                    ['message' => ['content' => 'The clinic can help with that.']],
                 ],
             ], 200),
         ]);
@@ -73,11 +112,14 @@ class ChatbotServiceTest extends TestCase
 
         $this->assertSame('The clinic can help with that.', $reply);
         Http::assertSent(function ($request) {
-            $this->assertStringContainsString('gemini-3.8-flash', (string) $request->url());
-            $this->assertTrue($request->hasHeader('x-goog-api-key', 'AQ.test-gemini-key'));
-            $this->assertArrayHasKey('systemInstruction', $request->data());
-            $this->assertSame('user', $request->data()['contents'][count($request->data()['contents']) - 1]['role']);
-            $this->assertSame('user', $request->data()['contents'][count($request->data()['contents']) - 1]['role']);
+            $this->assertSame('https://openrouter.ai/api/v1/chat/completions', (string) $request->url());
+            $this->assertTrue($request->hasHeader('Authorization', 'Bearer test-openrouter-key'));
+            $this->assertSame('nvidia/nemotron-3.5-super-vl:free', $request->data()['model']);
+            $this->assertSame('system', $request->data()['messages'][0]['role']);
+            $this->assertStringContainsString('You are Diabot, the virtual assistant for a dialysis center.', $request->data()['messages'][0]['content']);
+            $this->assertStringContainsString('do not diagnose', strtolower($request->data()['messages'][0]['content']));
+            $this->assertStringContainsString('Politely decline math or homework, programming or code-generation requests', $request->data()['messages'][0]['content']);
+            $this->assertSame('user', $request->data()['messages'][count($request->data()['messages']) - 1]['role']);
 
             return true;
         });
@@ -102,7 +144,7 @@ class ChatbotServiceTest extends TestCase
 
     public function test_provider_not_configured_returns_clear_message_when_no_faq_matches(): void
     {
-        config(['services.chatbot.provider' => 'none']);
+        config(['services.chatbot.openrouter_key' => '']);
         Http::fake();
 
         $reply = app(ChatbotService::class)->ask('Can you explain quantum computing?');
@@ -113,7 +155,7 @@ class ChatbotServiceTest extends TestCase
 
     public function test_short_or_ambiguous_keywords_do_not_trigger_false_positive_faqs(): void
     {
-        config(['services.chatbot.provider' => 'none']);
+        config(['services.chatbot.openrouter_key' => '']);
 
         $reply = app(ChatbotService::class)->ask('How do I open the app?');
 
@@ -124,8 +166,7 @@ class ChatbotServiceTest extends TestCase
     public function test_follow_up_uses_recent_context_without_client_trust(): void
     {
         config([
-            'services.chatbot.provider' => 'openai',
-            'services.chatbot.openai_key' => 'test-openai-key',
+            'services.chatbot.openrouter_key' => 'test-openrouter-key',
         ]);
 
         Session::put('chatbot_history', [
@@ -184,7 +225,7 @@ class ChatbotServiceTest extends TestCase
                 'message' => 'What are your operating hours?',
             ])
             ->assertOk()
-            ->assertJsonPath('reply', 'Our center is open Monday to Saturday, 6:00 AM to 6:00 PM. Please contact (044) 123-4567 to confirm holiday schedules.');
+            ->assertJsonPath('reply', 'Our center is open Monday to Saturday, 6:00 AM to 6:00 PM. Please contact the center to confirm holiday schedules.');
     }
 
     public function test_lookup_search_is_rate_limited(): void
@@ -222,8 +263,8 @@ class ChatbotServiceTest extends TestCase
 
         Http::fake([
             '*' => Http::response([
-                'candidates' => [
-                    ['content' => ['parts' => [['text' => 'General answer from AI.']]]],
+                'choices' => [
+                    ['message' => ['content' => 'General answer from AI.']],
                 ],
             ], 200),
         ]);
@@ -257,16 +298,18 @@ class ChatbotServiceTest extends TestCase
 
         Http::fake();
 
-        $reply = app(ChatbotService::class)->ask('What are your operating hours?');
+        $service = app(ChatbotService::class);
+        $reply = $service->ask('What are your operating hours?');
+        $contactReply = $service->ask('How can I contact the center?');
 
         $this->assertStringContainsString('7AM–5PM', $reply);
-        $this->assertStringContainsString('0912-345-6789', $reply);
+        $this->assertStringContainsString('0912-345-6789', $contactReply);
         $this->assertStringNotContainsString('{{', $reply);
     }
 
     public function test_preset_match_does_not_fire_on_a_single_generic_word(): void
     {
-        config(['services.chatbot.provider' => 'none']);
+        config(['services.chatbot.openrouter_key' => '']);
 
         $reply = app(ChatbotService::class)->ask('I need some help with something unrelated.');
 

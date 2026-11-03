@@ -15,15 +15,15 @@ class PatientLookupController extends Controller
     public function search(Request $request)
     {
         $validated = $request->validate([
-            'patient_code' => 'required|string',
-            'birthdate' => 'required|date',
+            'patient_code' => 'required|string|max:40',
+            'birthdate' => 'required|date_format:Y-m-d',
         ]);
 
-        $patient = Patient::where('patient_code', $validated['patient_code'])
+        $patient = Patient::where('patient_code', strtoupper(trim($validated['patient_code'])))
             ->whereDate('birthdate', $validated['birthdate'])
             ->first();
 
-        if (!$patient) {
+        if (! $patient) {
             return back()->withErrors(['patient_code' => 'No matching record found. Please check your reference code and birthdate.']);
         }
 
@@ -35,7 +35,7 @@ class PatientLookupController extends Controller
             ->get(['id', 'appointment_date', 'appointment_time', 'status']);
 
         return view('lookup', [
-            'patientName' => $patient->first_name . ' ' . substr($patient->last_name, 0, 1) . '.',
+            'patientName' => $patient->first_name.' '.substr($patient->last_name, 0, 1).'.',
             'appointments' => $appointments,
         ]);
     }

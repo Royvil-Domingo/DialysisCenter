@@ -7,7 +7,6 @@
     <div class="d-flex gap-2 flex-wrap">
         <a href="{{ route('treatment-records.index') }}" class="btn btn-soft">Back</a>
         <a href="{{ route('treatment-records.edit', $record) }}" class="btn btn-navy"><i class="bi bi-pencil"></i> Edit</a>
-        <form method="POST" action="{{ route('treatment-records.destroy', $record) }}" onsubmit="return confirm('Delete this treatment record?')">@csrf @method('DELETE')<button class="btn btn-soft text-danger"><i class="bi bi-trash"></i> Delete</button></form>
     </div>
 </div>
 <div class="card-soft p-4" style="max-width:720px">

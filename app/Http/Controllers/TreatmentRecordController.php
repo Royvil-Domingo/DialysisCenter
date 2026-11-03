@@ -7,6 +7,7 @@ use App\Models\Appointment;
 use App\Models\Patient;
 use App\Models\TreatmentRecord;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 class TreatmentRecordController extends Controller
@@ -41,14 +42,18 @@ class TreatmentRecordController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $this->validated($request);
-        $validated['recorded_by'] = $request->user()->id;
+        $record = DB::transaction(function () use ($request) {
+            $validated = $this->validated($request);
+            $validated['recorded_by'] = $request->user()->id;
 
-        $record = TreatmentRecord::create($validated);
+            $record = TreatmentRecord::create($validated);
 
-        if ($record->appointment_id) {
-            Appointment::where('id', $record->appointment_id)->update(['status' => 'completed']);
-        }
+            if ($record->appointment_id && $record->status === 'completed') {
+                Appointment::whereKey($record->appointment_id)->update(['status' => 'completed']);
+            }
+
+            return $record;
+        });
 
         ActivityLog::record('create', 'treatment-records', "Recorded treatment session for patient #{$record->patient_id}");
 
@@ -80,23 +85,30 @@ class TreatmentRecordController extends Controller
      */
     public function update(Request $request, TreatmentRecord $treatmentRecord)
     {
-        $treatmentRecord->update($this->validated($request, $treatmentRecord));
+        DB::transaction(function () use ($request, $treatmentRecord) {
+            $treatmentRecord->update($this->validated($request, $treatmentRecord));
+            $treatmentRecord->refresh();
+
+            if (! $treatmentRecord->appointment_id) {
+                return;
+            }
+
+            $appointment = Appointment::find($treatmentRecord->appointment_id);
+
+            if (! $appointment) {
+                return;
+            }
+
+            if ($treatmentRecord->status === 'completed') {
+                $appointment->update(['status' => 'completed']);
+            } elseif ($treatmentRecord->status === 'in_progress' && $appointment->status === 'completed') {
+                $appointment->update(['status' => 'scheduled']);
+            }
+        });
 
         ActivityLog::record('update', 'treatment-records', "Updated treatment record #{$treatmentRecord->id}");
 
         return redirect()->route('treatment-records.show', $treatmentRecord)->with('success', 'Treatment record updated.');
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(TreatmentRecord $treatmentRecord)
-    {
-        $treatmentRecord->delete();
-
-        ActivityLog::record('delete', 'treatment-records', "Deleted treatment record #{$treatmentRecord->id}");
-
-        return redirect()->route('treatment-records.index')->with('success', 'Treatment record deleted.');
     }
 
     protected function validated(Request $request, ?TreatmentRecord $record = null): array
@@ -129,11 +141,20 @@ class TreatmentRecordController extends Controller
             $appointmentId = $request->input('appointment_id');
             $patientId = $request->input('patient_id');
 
+            if ($record && (int) $record->patient_id !== (int) $patientId) {
+                $validator->errors()->add('patient_id', 'A treatment record cannot be reassigned to a different patient.');
+            }
+
             if (! $appointmentId || ! $patientId) {
                 return;
             }
 
-            $appointment = Appointment::find($appointmentId);
+            $appointmentQuery = Appointment::query();
+            if (DB::transactionLevel() > 0) {
+                $appointmentQuery->lockForUpdate();
+            }
+
+            $appointment = $appointmentQuery->find($appointmentId);
             if (! $appointment) {
                 return;
             }
@@ -142,8 +163,25 @@ class TreatmentRecordController extends Controller
                 $validator->errors()->add('patient_id', 'The selected appointment belongs to a different patient.');
             }
 
-            if ($record && $record->appointment_id && $record->appointment_id != $appointmentId && (int) $record->patient_id !== (int) $patientId) {
-                $validator->errors()->add('patient_id', 'The treatment record cannot be reassigned to a different patient.');
+            $sameLinkedAppointment = $record && (int) $record->appointment_id === (int) $appointmentId;
+
+            if ($record && $record->appointment_id && ! $sameLinkedAppointment) {
+                $validator->errors()->add('appointment_id', 'A treatment record cannot be reassigned to a different appointment.');
+            }
+
+            if (! $sameLinkedAppointment && in_array($appointment->status, ['cancelled', 'no_show'], true)) {
+                $validator->errors()->add('appointment_id', 'A treatment record cannot be created for a cancelled or missed appointment.');
+            }
+
+            if (! $sameLinkedAppointment) {
+                $existingRecordQuery = TreatmentRecord::query()->where('appointment_id', $appointment->id);
+                if (DB::transactionLevel() > 0) {
+                    $existingRecordQuery->lockForUpdate();
+                }
+
+                if ($existingRecordQuery->exists()) {
+                    $validator->errors()->add('appointment_id', 'This appointment already has a treatment record.');
+                }
             }
         });
 

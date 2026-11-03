@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;
 use App\Models\Notification;
 use Illuminate\Http\Request;
 
@@ -40,7 +41,13 @@ class NotificationController extends Controller
 
         $validated['posted_by'] = $request->user()->id;
 
-        Notification::create($validated);
+        $notification = Notification::create($validated);
+
+        ActivityLog::record(
+            'create',
+            'notifications',
+            "Posted notification #{$notification->id} for {$notification->audience}"
+        );
 
         return redirect()->route('notifications.index')->with('success', 'Notification posted.');
     }
