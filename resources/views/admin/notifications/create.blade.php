@@ -3,7 +3,7 @@
 @section('title', 'Post Announcement')
 @section('content')
 <div class="page-head"><div><h1>Post Announcement</h1><p>Visible on staff dashboards</p></div></div>
-<form method="POST" action="{{ route('admin.notifications.store') }}" class="card-soft p-4" style="max-width:820px">
+<form method="POST" action="{{ route('admin.notifications.store') }}" class="card-soft p-4 page-form">
     @csrf
     <div class="row g-3">
         @include('partials.field', ['name' => 'title', 'label' => 'Title', 'required' => true, 'col' => 'col-12'])

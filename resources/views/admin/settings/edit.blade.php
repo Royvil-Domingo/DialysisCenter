@@ -3,7 +3,7 @@
 @section('title', 'Clinic Settings')
 @section('content')
 <div class="page-head"><div><h1>Clinic Settings</h1><p>Shown on the public home page</p></div></div>
-<form method="POST" action="{{ route('admin.settings.update') }}" class="card-soft p-4" style="max-width:820px">
+<form method="POST" action="{{ route('admin.settings.update') }}" class="card-soft p-4 page-form">
     @csrf @method('PUT')
     <div class="row g-3">
         @include('partials.field', ['name' => 'clinic_name', 'label' => 'Clinic Name', 'value' => $settings['clinic_name'], 'col' => 'col-12'])

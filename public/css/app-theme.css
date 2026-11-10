@@ -194,6 +194,11 @@ h6 {
   box-shadow: 0 6px 20px rgba(11, 31, 77, 0.08);
 }
 
+.page-form {
+  width: 100%;
+  max-width: none;
+}
+
 .stat-icon {
   width: 52px;
   height: 52px;
