@@ -14,20 +14,64 @@ class PatientController extends Controller
     public function index(Request $request)
     {
         $patients = Patient::query()
-        ->when($request->search, function ($q, $search) {
-        $q->where(function ($q) use ($search) {
-        $q->where('first_name', 'like', "%{$search}%")
-          ->orWhere('last_name', 'like', "%{$search}%")
-          ->orWhere('patient_code', 'like', "%{$search}%");
-    });
-})
-        ->when($request->status, fn ($q, $status) => $q->where('status', $status))
-        ->latest()
-        ->paginate(15)
-        ->withQueryString();
+            ->when($request->search, function ($q, $search) {
+                $q->where(function ($q) use ($search) {
+                    $q->where('first_name', 'like', "%{$search}%")
+                        ->orWhere('last_name', 'like', "%{$search}%")
+                        ->orWhereRaw('LOWER(CONCAT(first_name, " ", last_name)) LIKE ?', ['%' . strtolower($search) . '%'])
+                        ->orWhere('patient_code', 'like', "%{$search}%")
+                        ->orWhere('contact_number', 'like', "%{$search}%");
+                });
+            })
+            ->when($request->status, fn ($q, $status) => $q->where('status', $status))
+            ->latest()
+            ->paginate(15)
+            ->withQueryString();
 
-    return view('patients.index', compact('patients'));
-}
+        return view('patients.index', compact('patients'));
+    }
+
+    public function search(Request $request)
+    {
+        $request->validate([
+            'q' => 'nullable|string|max:100',
+        ]);
+
+        $query = trim((string) $request->input('q', ''));
+
+        if ($query === '') {
+            return response()->json([
+                'results' => [],
+            ]);
+        }
+
+        $patients = Patient::query()
+            ->where(function ($q) use ($query) {
+                $q->where('patient_code', 'like', "%{$query}%")
+                    ->orWhere('first_name', 'like', "%{$query}%")
+                    ->orWhere('last_name', 'like', "%{$query}%")
+                    ->orWhereRaw('LOWER(CONCAT(first_name, " ", last_name)) LIKE ?', ['%' . strtolower($query) . '%'])
+                    ->orWhere('contact_number', 'like', "%{$query}%");
+            })
+            ->limit(8)
+            ->get(['id', 'patient_code', 'first_name', 'last_name', 'status', 'contact_number']);
+
+        $results = $patients->map(function ($patient) {
+            return [
+                'id' => $patient->id,
+                'label' => $patient->full_name . ' — ' . $patient->patient_code,
+                'value' => $patient->full_name,
+                'patient_code' => $patient->patient_code,
+                'status' => $patient->status,
+                'contact' => $patient->contact_number ?: '—',
+                'url' => route('patients.show', $patient),
+            ];
+        })->values();
+
+        return response()->json([
+            'results' => $results,
+        ]);
+    }
 
     /**
      * Show the form for creating a new resource.

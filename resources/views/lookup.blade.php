@@ -7,7 +7,7 @@
         <a href="{{ url('/') }}" class="text-decoration-none small"><i class="bi bi-arrow-left"></i> Back</a>
         <h3 class="mt-3">Check My Appointment</h3>
         <p class="text-muted">Enter the reference code given by our staff and your birthdate.</p>
-        <form method="POST" action="{{ route('lookup.search') }}" class="row g-3">
+        <form method="POST" action="{{ route('lookup.search') }}" class="row g-3" data-lookup-search>
             @csrf
             @include('partials.field', ['name' => 'patient_code', 'label' => 'Reference Code', 'col' => 'col-12', 'required' => true])
             @include('partials.field', ['name' => 'birthdate', 'label' => 'Birthdate', 'type' => 'date', 'col' => 'col-12', 'required' => true])

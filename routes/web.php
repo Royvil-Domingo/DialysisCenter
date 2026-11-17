@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Route;
 // PUBLIC — no login required
 Route::view('/', 'welcome')->name('welcome');
 Route::get('/lookup', [PatientLookupController::class, 'index'])->name('lookup');
+Route::get('/lookup/suggest', [PatientLookupController::class, 'suggest'])->name('lookup.suggest');
 Route::post('/lookup/search', [PatientLookupController::class, 'search'])
     ->middleware('throttle:appointment-lookup')
     ->name('lookup.search');
@@ -31,6 +32,7 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     Route::middleware(['role:admin,staff'])->group(function () {
+        Route::get('/patients/search', [PatientController::class, 'search'])->name('patients.search');
         Route::resource('patients', PatientController::class)
             ->middlewareFor(['store', 'update', 'destroy'], 'throttle:staff-writes');
         Route::resource('appointments', AppointmentController::class)

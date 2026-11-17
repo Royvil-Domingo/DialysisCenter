@@ -12,6 +12,39 @@ class PatientLookupController extends Controller
         return view('lookup');
     }
 
+    public function suggest(Request $request)
+    {
+        $request->validate([
+            'q' => 'nullable|string|max:60',
+        ]);
+
+        $query = trim((string) $request->input('q', ''));
+
+        if ($query === '') {
+            return response()->json(['results' => []]);
+        }
+
+        $patients = Patient::query()
+            ->where(function ($q) use ($query) {
+                $q->where('patient_code', 'like', "%{$query}%")
+                    ->orWhere('first_name', 'like', "%{$query}%")
+                    ->orWhere('last_name', 'like', "%{$query}%")
+                    ->orWhereRaw('LOWER(CONCAT(first_name, " ", last_name)) LIKE ?', ['%' . strtolower($query) . '%']);
+            })
+            ->limit(6)
+            ->get(['id', 'patient_code', 'first_name', 'last_name', 'birthdate']);
+
+        return response()->json([
+            'results' => $patients->map(function ($patient) {
+                return [
+                    'patient_code' => $patient->patient_code,
+                    'label' => $patient->full_name . ' — ' . $patient->patient_code,
+                    'birthdate' => $patient->birthdate?->format('Y-m-d'),
+                ];
+            })->values(),
+        ]);
+    }
+
     public function search(Request $request)
     {
         $validated = $request->validate([

@@ -6,11 +6,12 @@
     <title>@yield('title', 'Dashboard') · {{ \App\Models\Setting::get('clinic_name', 'Dialysis Center') }}</title>
 </head>
 <body>
+@include('partials.page-loader')
 <div class="d-lg-flex">
     @include('partials.sidebar')
     <div class="flex-grow-1 min-w-0">
         @include('partials.topbar')
-        <main class="p-3 p-md-4">
+        <main class="p-3 p-md-4 page-shell">
             @include('partials.flash')
             @yield('content')
         </main>
