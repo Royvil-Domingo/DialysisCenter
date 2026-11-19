@@ -23,9 +23,30 @@
 const chatUrl = "{{ route('chatbot.message') }}";
 let chatRequestPending = false;
 
-function toggleChat(){ document.getElementById('chatCard').classList.toggle('d-none'); }
+function toggleChat(){
+  const card = document.getElementById('chatCard');
+  if (!card) return;
+
+  if (card.classList.contains('d-none')) {
+    card.classList.remove('d-none');
+    requestAnimationFrame(() => card.classList.add('is-open'));
+    return;
+  }
+
+  card.classList.remove('is-open');
+  setTimeout(() => card.classList.add('d-none'), 220);
+}
 function chatAdd(who, text){
-  const d = document.createElement('div'); d.className = 'msg msg-' + who; d.textContent = text;
+  const d = document.createElement('div');
+  d.className = 'msg msg-' + who;
+
+  if (who === 'bot' && text === 'typing') {
+    d.classList.add('typing');
+    d.innerHTML = '<span class="typing-text">Diabot is typing</span><span class="typing-dots"><span></span><span></span><span></span></span>';
+  } else {
+    d.textContent = text;
+  }
+
   const l = document.getElementById('chatLog'); l.appendChild(d); l.scrollTop = l.scrollHeight; return d;
 }
 
@@ -39,7 +60,7 @@ async function sendChat(text) {
     const sendButton = document.querySelector('#chatForm button[type="submit"]');
 
     chatAdd('me', text);
-    const wait = chatAdd('bot', 'Diabot is typing...');
+    const wait = chatAdd('bot', 'typing');
     if (sendButton) sendButton.disabled = true;
 
     try {
@@ -81,9 +102,11 @@ async function sendChat(text) {
             throw new Error('The chatbot returned an empty reply. Please try again.');
         }
 
+        wait.classList.remove('typing');
         wait.textContent = data.reply;
     } catch (error) {
         console.error('Chatbot request failed:', error);
+        wait.classList.remove('typing');
         wait.textContent = error && error.message ? error.message : 'Unable to contact the chatbot right now. Please try again.';
     } finally {
         chatRequestPending = false;

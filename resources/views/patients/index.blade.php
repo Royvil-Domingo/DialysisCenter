@@ -7,7 +7,7 @@
     <a href="{{ route('patients.create') }}" class="btn btn-navy"><i class="bi bi-plus-lg"></i> Add Patient</a>
 </div>
 <div class="card-soft p-3 p-md-4">
-    <form method="GET" class="row g-2 mb-3 no-print">
+    <form method="GET" class="row g-2 mb-3 no-print" data-live-search="patients">
         <div class="col-md-6"><input name="search" value="{{ request('search') }}" class="form-control" placeholder="Search name or patient code"></div>
         <div class="col-md-3">
             <select name="status" class="form-select">
