@@ -18,7 +18,6 @@ use Illuminate\Support\Facades\Route;
 // PUBLIC — no login required
 Route::view('/', 'welcome')->name('welcome');
 Route::get('/lookup', [PatientLookupController::class, 'index'])->name('lookup');
-Route::get('/lookup/suggest', [PatientLookupController::class, 'suggest'])->name('lookup.suggest');
 Route::post('/lookup/search', [PatientLookupController::class, 'search'])
     ->middleware('throttle:appointment-lookup')
     ->name('lookup.search');

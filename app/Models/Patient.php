@@ -42,6 +42,12 @@ class Patient extends Model
         return $this->belongsTo(User::class, 'registered_by');
     }
 
+    /** The patient's portal login account, if one has been created. */
+    public function user()
+    {
+        return $this->hasOne(User::class, 'patient_id');
+    }
+
     public function appointments()
     {
         return $this->hasMany(Appointment::class);

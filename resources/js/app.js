@@ -281,5 +281,4 @@ configurePageLoader();
 document.addEventListener('DOMContentLoaded', () => {
     setupPageMotion();
     initLivePatientSearch();
-    initLookupSuggestions();
 });
